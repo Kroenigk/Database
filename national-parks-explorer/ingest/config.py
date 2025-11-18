@@ -8,10 +8,11 @@ RIDB_API_KEY = os.getenv("RIDB_API_KEY")
 NOAA_API_TOKEN = os.getenv("NOAA_API_TOKEN")
 USGS_BASE_URL = os.getenv("USGS_BASE_URL")
 NOAA_BASE_URL = os.getenv("NOAA_BASE_URL")
+RIDB_BASE_URL = os.getenv("RIDB_BASE_URL")
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "user": os.getenv("DB_USER", "root"),
-    "password": os.getenv("DB_PASS", ""),
+    "password": os.getenv("DB_PASSWORD", ""),
     "database": os.getenv("DB_NAME", "national_parks_db"),
 }

@@ -1,6 +1,9 @@
-"""
-Backend package initialization for National Parks Explorer.
+from .nps_ingest import ingest_parks
+from .ridb_ingest import ingest_ridb_all
+from .usgs_noaa_ingest import ingest_weather_and_safety
 
-Exposes convenient imports for higher-level modules.
-"""
-from .db import get_connection
+__all__ = [
+    "ingest_parks",
+    "ingest_ridb_all",
+    "ingest_weather_and_safety",
+]

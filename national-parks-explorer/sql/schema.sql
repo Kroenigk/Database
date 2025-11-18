@@ -167,9 +167,9 @@ CREATE TABLE CAMPGROUND_AMENITY (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE FACILITY (
-    facility_id INT AUTO_INCREMENT PRIMARY KEY,
+    facility_id CHAR(36) PRIMARY KEY,
     park_id     CHAR(36),
-    name        VARCHAR(150) NOT NULL,
+    name        VARCHAR(255) NOT NULL,
     type        VARCHAR(50),
     CONSTRAINT fk_facility_park
         FOREIGN KEY (park_id) REFERENCES PARK(park_id)
@@ -178,7 +178,7 @@ CREATE TABLE FACILITY (
 
 CREATE TABLE FEE (
     fee_id      INT AUTO_INCREMENT PRIMARY KEY,
-    facility_id INT NOT NULL,
+    facility_id CHAR(36) NOT NULL,
     description VARCHAR(255),
     amount      DECIMAL(10,2),
     CONSTRAINT fk_fee_facility
@@ -187,7 +187,7 @@ CREATE TABLE FEE (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE FACILITY_ACTIVITY (
-    facility_id INT         NOT NULL,
+    facility_id CHAR(36) NOT NULL,
     activity_id VARCHAR(50) NOT NULL,
     PRIMARY KEY (facility_id, activity_id),
     CONSTRAINT fk_facility_activity_facility
@@ -200,7 +200,7 @@ CREATE TABLE FACILITY_ACTIVITY (
 
 CREATE TABLE ACCESSIBILITY (
     accessibility_id     INT AUTO_INCREMENT PRIMARY KEY,
-    facility_id          INT NOT NULL,
+    facility_id          CHAR(36) NOT NULL,
     wheelchair_accessible TINYINT(1) NOT NULL DEFAULT 0,
     audio_descriptions    TINYINT(1) NOT NULL DEFAULT 0,
     tactile_exhibits      TINYINT(1) NOT NULL DEFAULT 0,
