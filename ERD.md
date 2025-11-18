@@ -10,6 +10,7 @@ erDiagram
     VARCHAR(150) name
     VARCHAR(50) designation
     TEXT description
+    VARCHAR(50) park_code
     DECIMAL latitude
     DECIMAL longitude
   }
@@ -196,7 +197,7 @@ erDiagram
   }
 
   PARK_ALERT {
-    INT alert_id PK
+    CHAR(36) alert_id PK
     CHAR(36) park_id FK
     VARCHAR(50) category
     VARCHAR(150) title

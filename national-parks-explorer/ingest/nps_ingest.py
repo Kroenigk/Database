@@ -24,12 +24,13 @@ def ingest_parks():
     cur = conn.cursor()
 
     park_sql = """
-      INSERT INTO PARK (park_id, name, designation, description, latitude, longitude)
-      VALUES (%s, %s, %s, %s, %s, %s)
+      INSERT INTO PARK (park_id, name, designation, description, park_code, latitude, longitude)
+      VALUES (%s, %s, %s, %s, %s, %s, %s)
       ON DUPLICATE KEY UPDATE
         name = VALUES(name),
         designation = VALUES(designation),
         description = VALUES(description),
+        park_code = VALUES(park_code),
         latitude = VALUES(latitude),
         longitude = VALUES(longitude)
     """
@@ -84,10 +85,11 @@ def ingest_parks():
             name = p.get("fullName")
             designation = p.get("designation")
             description = p.get("description")
+            park_code = p.get("parkCode")
             lat = float(p["latitude"]) if p.get("latitude") else None
             lon = float(p["longitude"]) if p.get("longitude") else None
 
-            cur.execute(park_sql, (park_id, name, designation, description, lat, lon))
+            cur.execute(park_sql, (park_id, name, designation, description, park_code, lat, lon))
 
             # states string like "CO,UT"
             state_codes = (p.get("states") or "").split(",")
@@ -95,8 +97,7 @@ def ingest_parks():
                 code = code.strip()
                 if not code:
                     continue
-                # map state code to name could be improved with a lookup table
-                cur.execute(state_sql, (code, None))
+                cur.execute(state_sql, (code, state_map().get(code, "Unknown")))
                 cur.execute(park_state_sql, (park_id, code))
 
 
@@ -128,11 +129,92 @@ def ingest_parks():
 
 
 #Todo: implement the following functions
-def fetch_park_alerts(park_id):
-        pass
-def ingest_park_alerts(park_id):
-        #/alerts endpoint
-        pass
+def fetch_park_alerts():
+    params = {"api_key": NPS_API_KEY, "limit": 100}
+    start = 0
+    while True:
+        params["start"] = start
+        resp = requests.get(f"{BASE_URL}/alerts", params=params)
+        resp.raise_for_status()
+        data = resp.json()
+        parks = data.get("data", [])
+        if not parks:
+            break
+        for park in parks:
+            yield park
+        start += len(parks)
+
+def ingest_park_alerts(max_pages: int = 10):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    insert_sql = """
+      INSERT INTO PARK_ALERT (alert_id, park_id, category, title, description, issued_at, expires_at)
+      VALUES (%s, %s, %s, %s, %s, %s, %s)
+      ON DUPLICATE KEY UPDATE
+        category    = VALUES(category),
+        title       = VALUES(title),
+        description = VALUES(description),
+        issued_at   = VALUES(issued_at),
+        expires_at  = VALUES(expires_at)
+    """
+
+    page = 0
+    start = 0
+
+    while page < max_pages:
+        params = {
+            "api_key": NPS_API_KEY,
+            "limit": 100,
+            "start": start,
+        }
+        resp = requests.get(f"{BASE_URL}/alerts", params=params, timeout=15)
+
+        if resp.status_code != 200:
+            print("[ALERTS] NPS alerts request failed:", resp.status_code, resp.text[:200])
+            break
+
+        data = resp.json().get("data", [])
+        if not data:
+            break
+
+        for alert in data:
+            alert_id = alert.get("id")
+            park_code = alert.get("parkCode")
+            category = alert.get("category")
+            title = alert.get("title")
+            description = alert.get("description")
+            issued_at = alert.get("lastIndexedDate")  # already ISO-like string
+            expires_at = None  # NPS alerts don't usually include this; keep null for now
+
+            if not alert_id or not park_code:
+                continue
+
+            # Look up internal park_id from park_code
+            cur.execute(
+                "SELECT park_id FROM PARK WHERE park_code = %s LIMIT 1",
+                (park_code,),
+            )
+            row = cur.fetchone()
+            if not row:
+                # Park not in DB (maybe filtered out earlier) – skip this alert
+                continue
+
+            park_id = row[0]
+
+            cur.execute(
+                insert_sql,
+                (alert_id, park_id, category, title, description, issued_at, expires_at),
+            )
+
+        conn.commit()
+
+        # next page
+        start += len(data)
+        page += 1
+
+    conn.close()
+
 def fetch_events(park_id):
         pass
 def ingest_events(park_id):
@@ -143,7 +225,59 @@ def ingest_trails():
         #/places and /thingstodo endpoint
         # need to scrape for trails
         pass
-
+def state_map():
+    return {
+        "AL": "Alabama",
+        "AK": "Alaska",
+        "AZ": "Arizona",
+        "AR": "Arkansas",
+        "CA": "California",
+        "CO": "Colorado",
+        "CT": "Connecticut",
+        "DE": "Delaware",
+        "FL": "Florida",
+        "GA": "Georgia",
+        "HI": "Hawaii",
+        "ID": "Idaho",
+        "IL": "Illinois",
+        "IN": "Indiana",
+        "IA": "Iowa",
+        "KS": "Kansas",
+        "KY": "Kentucky",
+        "LA": "Louisiana",
+        "ME": "Maine",
+        "MD": "Maryland",
+        "MA": "Massachusetts",
+        "MI": "Michigan",
+        "MN": "Minnesota",
+        "MS": "Mississippi",
+        "MO": "Missouri",
+        "MT": "Montana",
+        "NE": "Nebraska",
+        "NV": "Nevada",
+        "NH": "New Hampshire",
+        "NJ": "New Jersey",
+        "NM": "New Mexico",
+        "NY": "New York",
+        "NC": "North Carolina",
+        "ND": "North Dakota",
+        "OH": "Ohio",
+        "OK": "Oklahoma",
+        "OR": "Oregon",
+        "PA": "Pennsylvania",
+        "RI": "Rhode Island",
+        "SC":  "South Carolina",
+        "SD":  "South Dakota",
+        "TN":  "Tennessee",
+        "TX":  "Texas",
+        "UT":  "Utah",
+        "VT":  "Vermont",
+        "VA":  "Virginia",
+        "WA":  "Washington",
+        "WV":  "West Virginia",
+        "WI":  "Wisconsin",
+        "WY":  "Wyoming"
+    }
 def ingest_nps_all():
     """
     Convenience wrapper used by ingest_all.py

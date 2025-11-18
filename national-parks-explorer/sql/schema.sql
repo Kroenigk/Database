@@ -11,6 +11,7 @@ CREATE TABLE PARK (
     name        VARCHAR(150) NOT NULL,
     designation VARCHAR(50),
     description TEXT,
+    park_code   VARCHAR(50),
     latitude    DECIMAL(9,6),
     longitude   DECIMAL(9,6)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -128,7 +129,7 @@ CREATE TABLE IMAGE (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE PARK_ALERT (
-    alert_id   INT AUTO_INCREMENT PRIMARY KEY,
+    alert_id   CHAR(36) PRIMARY KEY,
     park_id    CHAR(36)     NOT NULL,
     category   VARCHAR(50),
     title      VARCHAR(150) NOT NULL,
