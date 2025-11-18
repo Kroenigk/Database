@@ -127,8 +127,6 @@ def ingest_parks():
     finally:
         conn.close()
 
-
-#Todo: implement the following functions
 def fetch_park_alerts():
     params = {"api_key": NPS_API_KEY, "limit": 100}
     start = 0
@@ -215,16 +213,6 @@ def ingest_park_alerts(max_pages: int = 10):
 
     conn.close()
 
-def fetch_events(park_id):
-        pass
-def ingest_events(park_id):
-        #/events endpoint
-        # add events to a specific park for ingest park events
-        pass
-def ingest_trails():
-        #/places and /thingstodo endpoint
-        # need to scrape for trails
-        pass
 def state_map():
     return {
         "AL": "Alabama",
@@ -278,6 +266,19 @@ def state_map():
         "WI":  "Wisconsin",
         "WY":  "Wyoming"
     }
+
+#Todo: implement the following functions
+
+def fetch_events(park_id):
+        pass
+def ingest_events(park_id):
+        #/events endpoint
+        # add events to a specific park for ingest park events
+        pass
+def ingest_trails():
+        #/places and /thingstodo endpoint
+        # need to scrape for trails
+        pass
 def ingest_nps_all():
     """
     Convenience wrapper used by ingest_all.py
