@@ -42,7 +42,7 @@ erDiagram
   }
 
   EVENT {
-    INT event_id PK
+    CHAR(36) event_id PK
     CHAR(36) park_id FK
     VARCHAR(150) title
     DATETIME start_time

@@ -107,7 +107,7 @@ CREATE TABLE PARK_AMENITY (
 -- =========================================================
 
 CREATE TABLE EVENT (
-    event_id   INT AUTO_INCREMENT PRIMARY KEY,
+    event_id   CHAR(36)      PRIMARY KEY,
     park_id    CHAR(36)      NOT NULL,
     title      VARCHAR(150)  NOT NULL,
     start_time DATETIME,
