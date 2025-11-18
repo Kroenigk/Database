@@ -204,3 +204,11 @@ def ingest_ridb_all():
     ingest_facilities()
     # ingest_campgrounds()
     # ingest_amenities()
+def ingest_facility_activities(facility_id):
+    pass
+def ingest_fees(facility_id):
+    pass
+def ingest_accessibility_info(facility_id):
+    pass
+def ingest_campground_amenities(campground_id):
+    pass

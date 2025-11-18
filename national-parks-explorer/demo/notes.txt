@@ -1,8 +1,0 @@
-Demo Planning Notes:
-
-- Show ingestion run (limit=5) then schema tables populated.
-- Navigate Streamlit: search, details, activities filter.
-- Login with demo user.
-- Future: favorites, campground data, map visualization.
-
-TODO: Script steps for recording.

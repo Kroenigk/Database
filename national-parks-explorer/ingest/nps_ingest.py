@@ -3,6 +3,11 @@ from .config import NPS_API_KEY
 import requests
 
 BASE_URL = "https://developer.nps.gov/api/v1"
+#* Parks
+#* Activities
+#* Campgrounds
+#* Amenities
+#* Events
 
 def fetch_all_parks():
     params = {"api_key": NPS_API_KEY, "limit": 100}
@@ -68,3 +73,52 @@ def ingest_parks():
         conn.commit()
     finally:
         conn.close()
+
+
+#Todo: implement the following functions
+def ingest_states():
+    pass
+def fetch_state_parks(state_code):
+     pass
+def ingest_state_parks(state_code):
+    pass
+
+def fetch_park_activities(park_id):
+     pass
+def ingest_park_activities(park_id):
+    pass
+def ingest_amenities():
+        #/amenities endpoint
+        pass
+def fetch_amenties():
+        pass
+def ingest_images():
+        pass
+def ingest_park_alerts(park_id):
+        #/alerts endpoint
+        pass
+def fetch_events(park_id):
+        pass
+def ingest_events(park_id):
+        #/events endpoint
+        pass
+def ingest_park_events(park_id):
+        pass
+def ingest_trails():
+        #/places and /thingstodo endpoint
+        # need to scrape for trails
+        pass
+
+def ingest_nps_all():
+    """
+    Convenience wrapper used by ingest_all.py
+    """
+    ingest_parks()
+    ingest_states()
+    ingest_park_activities()
+    ingest_amenities()
+    ingest_images()
+    ingest_trails()
+    ingest_events()
+    ingest_state_parks()
+    ingest_park_alerts()
