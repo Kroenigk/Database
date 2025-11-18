@@ -103,7 +103,7 @@ erDiagram
 
   WEATHER {
     INT weather_id PK
-    CHAR(36) park_id FK
+    CHAR park_id FK
     DATE record_date
     DECIMAL temp_high
     DECIMAL temp_low
