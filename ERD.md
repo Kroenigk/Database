@@ -27,6 +27,7 @@ erDiagram
   ACTIVITY {
     VARCHAR(50) activity_id PK
     VARCHAR(100) name
+    TEXT description
   }
 
   PARK_ACTIVITY {
@@ -58,6 +59,11 @@ erDiagram
   AMENITY {
     INT amenity_id PK
     VARCHAR(100) name
+  }
+
+  PARK_AMENITY{
+    CHAR(36) park_id 
+    INT amenity_id
   }
 
   CAMPGROUND {
@@ -244,12 +250,16 @@ erDiagram
   CAMPGROUND ||--o{ CAMPGROUND_AMENITY : "has"
   CAMPGROUND_AMENITY ||--o{ CAMPGROUND : "used_in"
   AMENITY ||--o{ CAMPGROUND_AMENITY : used_in
+  PARK ||--o{ PARK_AMENITY : "has"
+  PARK_AMENITY ||--o{ PARK : "used_in"
+  AMENITY ||--o{ PARK_AMENITY : used_in
 
   PARK ||--o{ FACILITY : "has"
   FACILITY ||--o{ FEE : "charges"
   FACILITY ||--o{ FACILITY_ACTIVITY : "supports"
   ACTIVITY ||--o{ FACILITY_ACTIVITY : "available_at"
   FACILITY ||--o{ ACCESSIBILITY : "described_by"
+
 
   PARK ||--o{ PARK_ALERT : "has_alert"
   PARK ||--o{ TRAIL : "has_trail"

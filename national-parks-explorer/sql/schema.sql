@@ -17,7 +17,8 @@ CREATE TABLE PARK (
 
 CREATE TABLE ACTIVITY (
     activity_id VARCHAR(50) PRIMARY KEY,
-    name        VARCHAR(100) NOT NULL
+    name        VARCHAR(100) NOT NULL,
+    description TEXT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE AMENITY (
@@ -85,6 +86,18 @@ CREATE TABLE PARK_ACTIVITY (
         ON DELETE CASCADE,
     CONSTRAINT fk_park_activity_activity
         FOREIGN KEY (activity_id) REFERENCES ACTIVITY(activity_id)
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE PARK_AMENITY (
+    park_id   CHAR(36) NOT NULL,
+    amenity_id INT     NOT NULL,
+    PRIMARY KEY (park_id, amenity_id),
+    CONSTRAINT fk_park_amenity_park
+        FOREIGN KEY (park_id) REFERENCES PARK(park_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_park_amenity_amenity
+        FOREIGN KEY (amenity_id) REFERENCES AMENITY(amenity_id)
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

@@ -3,11 +3,6 @@ from .config import NPS_API_KEY
 import requests
 
 BASE_URL = "https://developer.nps.gov/api/v1"
-#* Parks
-#* Activities
-#* Campgrounds
-#* Amenities
-#* Events
 
 def fetch_all_parks():
     params = {"api_key": NPS_API_KEY, "limit": 100}
@@ -49,9 +44,43 @@ def ingest_parks():
       VALUES (%s, %s)
     """
 
+    image_sql = """
+      INSERT INTO IMAGE (park_id, url, alt_text, credit)
+      VALUES (%s, %s, %s, %s)
+      ON DUPLICATE KEY UPDATE
+        url = VALUES(url),
+        alt_text = VALUES(alt_text),
+        credit = VALUES(credit)
+    """
+
+    amenities_sql = """
+      INSERT INTO AMENITY (amenity_id, park_id, name, description)
+      VALUES (%s, %s, %s, %s)
+      ON DUPLICATE KEY UPDATE
+        name = VALUES(name),
+        description = VALUES(description)
+    """
+
+    park_amenity_sql = """
+      INSERT IGNORE INTO PARK_AMENITY (park_id, amenity_id)
+      VALUES (%s, %s)
+    """
+
+    activity_sql = """
+        INSERT INTO ACTIVITY (activity_id, name, description)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          name = VALUES(name),
+          description = VALUES(description)
+    """
+    park_activity_sql = """
+      INSERT IGNORE INTO PARK_ACTIVITY (park_id, activity_id)
+      VALUES (%s, %s)
+    """
+
     try:
         for p in fetch_all_parks():
-            park_id = p["id"]                  # CHAR from NPS
+            park_id = p["id"]                
             name = p.get("fullName")
             designation = p.get("designation")
             description = p.get("description")
@@ -66,33 +95,40 @@ def ingest_parks():
                 code = code.strip()
                 if not code:
                     continue
-                # you can leave STATE.name NULL or map manually later
+                # map state code to name could be improved with a lookup table
                 cur.execute(state_sql, (code, None))
                 cur.execute(park_state_sql, (park_id, code))
 
+
+            # images
+            for img in p.get("images", []):
+                url = img.get("url")
+                alt_text = img.get("altText")
+                credit = img.get("credit")
+                cur.execute(image_sql, (park_id, url, alt_text, credit))
+
+            # amenities
+            for amenity in p.get("amenities", []):
+                amenity_id = amenity.get("id")
+                amenity_name = amenity.get("name")
+                amenity_desc = amenity.get("description")
+                cur.execute(amenities_sql, (amenity_id, park_id, amenity_name, amenity_desc))
+                cur.execute(park_amenity_sql, (park_id, amenity_id))
+
+            # activities
+            for activity in p.get("activities", []):
+                activity_id = activity.get("id")
+                activity_name = activity.get("name")
+                activity_desc = activity.get("description")
+                cur.execute(activity_sql, (activity_id, activity_name, activity_desc))
+                cur.execute(park_activity_sql, (park_id, activity_id))
         conn.commit()
     finally:
         conn.close()
 
 
 #Todo: implement the following functions
-def ingest_states():
-    pass
-def fetch_state_parks(state_code):
-     pass
-def ingest_state_parks(state_code):
-    pass
-
-def fetch_park_activities(park_id):
-     pass
-def ingest_park_activities(park_id):
-    pass
-def ingest_amenities():
-        #/amenities endpoint
-        pass
-def fetch_amenties():
-        pass
-def ingest_images():
+def fetch_park_alerts(park_id):
         pass
 def ingest_park_alerts(park_id):
         #/alerts endpoint
@@ -101,8 +137,7 @@ def fetch_events(park_id):
         pass
 def ingest_events(park_id):
         #/events endpoint
-        pass
-def ingest_park_events(park_id):
+        # add events to a specific park for ingest park events
         pass
 def ingest_trails():
         #/places and /thingstodo endpoint
@@ -114,11 +149,6 @@ def ingest_nps_all():
     Convenience wrapper used by ingest_all.py
     """
     ingest_parks()
-    ingest_states()
-    ingest_park_activities()
-    ingest_amenities()
-    ingest_images()
     ingest_trails()
     ingest_events()
-    ingest_state_parks()
     ingest_park_alerts()
