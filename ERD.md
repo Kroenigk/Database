@@ -75,27 +75,27 @@ erDiagram
   }
 
   FACILITY {
-    INT facility_id PK
+    CHAR(36) facility_id PK
     CHAR(36) park_id FK
-    VARCHAR(150) name
+    VARCHAR(255) name
     VARCHAR(50) type
   }
 
   FEE {
     INT fee_id PK
-    INT facility_id FK
+    CHAR(36) facility_id FK
     VARCHAR(255) description
     DECIMAL amount
   }
 
   FACILITY_ACTIVITY {
-    INT facility_id FK
+    CHAR(36) facility_id FK
     VARCHAR(50) activity_id FK
   }
 
   ACCESSIBILITY {
     INT accessibility_id PK
-    INT facility_id FK
+    CHAR(36) facility_id FK
     TINYINT(1) wheelchair_accessible
     TINYINT(1) audio_descriptions
     TINYINT(1) tactile_exhibits
