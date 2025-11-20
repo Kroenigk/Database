@@ -1,11 +1,11 @@
-from .nps_ingest import ingest_parks
+from .nps_ingest import ingest_nps_all
 from .ridb_ingest import ingest_ridb_all
 from .usgs_noaa_ingest import ingest_weather_and_safety
 
 
 def main():
     print("Ingesting NPS data...")
-    ingest_parks()
+    ingest_nps_all()
 
     print("Ingesting Recreation.gov data...")
     ingest_ridb_all()
