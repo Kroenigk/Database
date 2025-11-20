@@ -46,12 +46,17 @@ NOAA_BASE_URL=https://www.ncdc.noaa.gov/cdo-web/api/v2
 python -m ingest.ingest_all
 ```
 
-7) Create a user (see [backend/auth.py](national-parks-explorer/backend/auth.py))
+7) Create a user (see [backend/create_demo_user.py](national-parks-explorer/backend/create_demo_user.py))
 ```bash
-python -c "from backend.auth import create_user; create_user('demo','demo@example.com','ChangeMe123!')"
+python -m backend.create_demo_user.py kylie kylie@example.com MyStrongPass!
 ```
 
-8) Run Streamlit app (see [frontend/app.py](national-parks-explorer/frontend/app.py))
+8) Run the backend API
+```bash
+python -m backend.auth_app
+```
+
+9) Run Streamlit app (see [frontend/app.py](national-parks-explorer/frontend/app.py))
 ```bash
 streamlit run frontend/app.py
 ```

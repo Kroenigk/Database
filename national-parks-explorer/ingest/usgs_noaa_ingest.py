@@ -1,8 +1,8 @@
 import requests
 from datetime import date, timedelta
 
-from .db import get_connection
-from .config import NOAA_API_TOKEN, NOAA_BASE_URL, USGS_BASE_URL
+from backend.db import get_connection
+from backend.config import ( NOAA_API_TOKEN, NOAA_BASE_URL, USGS_BASE_URL)
 
 NOAA_HEADERS = {"token": NOAA_API_TOKEN}
 

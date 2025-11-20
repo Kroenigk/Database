@@ -1,11 +1,10 @@
 
-import math
 from requests.exceptions import HTTPError
 import requests
 from typing import Iterable, Dict, Any, List, Optional, Tuple
 
-from .config import RIDB_API_KEY, RIDB_BASE_URL
-from .db import get_connection
+from backend.db import get_connection
+from backend.config import ( RIDB_API_KEY, RIDB_BASE_URL )
 
 HEADERS = {"apikey": RIDB_API_KEY}
 

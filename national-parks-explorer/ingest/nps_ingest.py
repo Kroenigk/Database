@@ -1,8 +1,9 @@
-from .db import get_connection
-from .config import NPS_API_KEY
+
+from backend.db import get_connection
+from backend.config import (NPS_API_KEY, NPS_BASE_URL)
 import requests
 
-BASE_URL = "https://developer.nps.gov/api/v1"
+BASE_URL = NPS_BASE_URL
 
 def _get_or_create_amenity(cur, name: str) -> int:
     """
