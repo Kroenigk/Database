@@ -6,7 +6,6 @@ from .config import NOAA_API_TOKEN, NOAA_BASE_URL, USGS_BASE_URL
 
 NOAA_HEADERS = {"token": NOAA_API_TOKEN}
 
-
 # ---------------------------------------------------------
 # NOAA: stations + daily weather
 # ---------------------------------------------------------

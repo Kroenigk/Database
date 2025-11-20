@@ -18,7 +18,7 @@ def fetch_all_parks():
         for park in parks:
             yield park
         start += len(parks)
-
+        
 def ingest_parks():
     conn = get_connection()
     cur = conn.cursor()

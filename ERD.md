@@ -246,20 +246,18 @@ erDiagram
   PARK ||--o{ EVENT : "hosts"
   PARK ||--o{ CAMPGROUND : "has"
   PARK ||--o{ IMAGE : "has"
-  PARK ||--o{ SAFETY : "scored_by"
+  PARK ||--||SAFETY:"scored_by"
 
   CAMPGROUND ||--o{ CAMPGROUND_AMENITY : "has"
-  CAMPGROUND_AMENITY ||--o{ CAMPGROUND : "used_in"
   AMENITY ||--o{ CAMPGROUND_AMENITY : used_in
   PARK ||--o{ PARK_AMENITY : "has"
-  PARK_AMENITY ||--o{ PARK : "used_in"
   AMENITY ||--o{ PARK_AMENITY : used_in
 
   PARK ||--o{ FACILITY : "has"
   FACILITY ||--o{ FEE : "charges"
   FACILITY ||--o{ FACILITY_ACTIVITY : "supports"
   ACTIVITY ||--o{ FACILITY_ACTIVITY : "available_at"
-  FACILITY ||--o{ ACCESSIBILITY : "described_by"
+  FACILITY ||--||ACCESSIBILITY:"described_by"
 
 
   PARK ||--o{ PARK_ALERT : "has_alert"
