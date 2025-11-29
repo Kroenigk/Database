@@ -269,14 +269,10 @@ def update_safety_scores(max_parks: int = 63):
 
 
 # ---------------------------------------------------------
-# Public entrypoint for ingest_all.py
+# entrypoint for ingest_all.py
 # ---------------------------------------------------------
 
 def ingest_weather_and_safety():
-    """
-    Entry point called from ingest_all.py.
-    Kept simple for now; you can expand later.
-    """
     print("Updating WEATHER from NOAA...")
     update_weather_for_parks()
 

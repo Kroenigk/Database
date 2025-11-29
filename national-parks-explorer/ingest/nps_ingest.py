@@ -19,10 +19,11 @@ MAIN_PARK_CODES: set[str] = {
 
 MAX_RETRY_AFTER_SECONDS = 10
 
+# -------------------------
+# NPS API helpers
+# This helps handle rate limiting (429) with backoff.
+# ---------
 def _nps_get(path: str, params: dict, max_retries: int = 5):
-    """
-    Wrapper around requests.get with capped backoff on 429 for Codespaces.
-    """
     url = f"{BASE_URL}/{path.lstrip('/')}"
     params = {**params, "api_key": NPS_API_KEY}
 
@@ -42,7 +43,7 @@ def _nps_get(path: str, params: dict, max_retries: int = 5):
             except ValueError:
                 delay_val = 5
             delay = min(delay_val, MAX_RETRY_AFTER_SECONDS)
-            print(f"[NPS] 429 on {path}, raw={raw!r}, sleeping {delay}s...")
+            print(f"[NPS] 429 on {path}, sleeping {delay}s...")
             time.sleep(delay)
             continue
 
@@ -50,20 +51,9 @@ def _nps_get(path: str, params: dict, max_retries: int = 5):
 
     raise RuntimeError(f"NPS request failed after retries: {url} (last={last_status})")
 
-
-def _get_or_create_amenity(cur, name: str) -> int:
-    if not name:
-        raise ValueError("Amenity name must be non-empty")
-
-    cur.execute("SELECT amenity_id FROM AMENITY WHERE name = %s", (name,))
-    row = cur.fetchone()
-    if row:
-        return row[0]
-
-    cur.execute("INSERT INTO AMENITY (name) VALUES (%s)", (name,))
-    return cur.lastrowid
-
-
+# -------------------------
+# PARKS
+# ------------------------
 def fetch_all_parks():
     """
     Fetch all parks from NPS; filtered later to only MAIN_PARK_CODES.
@@ -115,8 +105,6 @@ def ingest_parks():
 
     park_activity_sql = "INSERT IGNORE INTO PARK_ACTIVITY (park_id, activity_id) VALUES (%s, %s)"
 
-    park_amenity_link_sql = "INSERT IGNORE INTO PARK_AMENITY (park_id, amenity_id) VALUES (%s, %s)"
-
     try:
         for p in fetch_all_parks():
             park_id = p["id"]
@@ -161,18 +149,15 @@ def ingest_parks():
                     cur.execute(activity_sql, (act_id, act_name, act.get("description")))
                     cur.execute(park_activity_sql, (park_id, act_id))
 
-            # amenities
-            for amenity in p.get("amenities", []):
-                a_name = amenity.get("name") or amenity.get("value")
-                if a_name:
-                    a_id = _get_or_create_amenity(cur, a_name)
-                    cur.execute(park_amenity_link_sql, (park_id, a_id))
-
         conn.commit()
         print("NPS: parks ingested.")
     finally:
         conn.close()
 
+
+# -------------------------
+# PARK ALERTS
+# -------------------------
 
 def fetch_park_alerts_page(start: int):
     """Alert fetcher now uses _nps_get."""
@@ -192,7 +177,6 @@ def ingest_park_alerts(max_pages: int = 10):
           description=VALUES(description), issued_at=VALUES(issued_at), expires_at=VALUES(expires_at)
     """
 
-    # Preload park_code → park_id (lowercase)
     cur.execute("SELECT park_id, park_code FROM PARK")
     code_to_id = {code.lower(): pid for (pid, code) in cur.fetchall() if code}
 
@@ -238,7 +222,7 @@ def ingest_park_alerts(max_pages: int = 10):
     finally:
         conn.close()
 
-
+# This allows looking up full state names from codes.
 def state_map():
     return {
         "AL": "Alabama","AK": "Alaska","AZ": "Arizona","AR": "Arkansas","CA": "California",
@@ -253,9 +237,8 @@ def state_map():
         "VA": "Virginia","WA": "Washington","WV": "West Virginia","WI": "Wisconsin","WY": "Wyoming"
     }
 
-
 # -------------------------
-# CAMP GROUNDS
+# CAMPGROUNDS AND CAMPING AMENITIES
 # -------------------------
 
 def fetch_campgrounds(park_code: str | None = None):
@@ -274,7 +257,7 @@ def fetch_campgrounds(park_code: str | None = None):
             yield cg
         start += len(data)
 
-
+# Helper to extract amenity names from campground record
 def _extract_campground_amenity_names(cg: dict) -> set[str]:
     res = set()
     for key, value in (cg.get("amenities") or {}).items():
@@ -384,9 +367,8 @@ def _parse_event_datetimes(ev: dict):
     def combo(d, t): return None if not d else f"{d} {t or '00:00:00'}"
     return combo(d1, t1), combo(d2, t2)
 
-
+# This extracts park IDs from event records.
 def _extract_event_park_ids(ev: dict) -> list[str]:
-    """Extract GUID park IDs from events."""
     ids = []
 
     pid = ev.get("parkId") or ev.get("parkid")
@@ -408,7 +390,6 @@ def _extract_event_park_ids(ev: dict) -> list[str]:
             seen.add(i)
             out.append(i)
     return out
-
 
 def ingest_events():
     conn = get_connection()
@@ -461,11 +442,103 @@ def ingest_events():
     finally:
         conn.close()
 
+# -------------------------
+# AMENITIES
+# -------------------------
+
+# Fetch places for park and yield those with amenities
+def fetch_amenities_for_park(park_code: str):
+    for place in fetch_places_for_park(park_code):
+        amenities = place.get("amenities") or []
+        if isinstance(amenities, list) and amenities:
+            yield place
+
+# Helper to get or create AMENITY row
+def _get_or_create_amenity(cur, name: str) -> int:
+    """Get or create AMENITY row; return amenity_id."""
+    select_sql = "SELECT amenity_id FROM AMENITY WHERE name = %s LIMIT 1"
+    insert_sql = "INSERT INTO AMENITY (name) VALUES (%s)"
+
+    cur.execute(select_sql, (name,))
+    row = cur.fetchone()
+    if row:
+        return row[0]
+
+    cur.execute(insert_sql, (name,))
+    return cur.lastrowid
+
+def ingest_park_amenities():
+    """
+    Ingest amenities into AMENITY and PARK_AMENITY using /places.
+
+    AMENITY (
+        amenity_id INT AUTO_INCREMENT PRIMARY KEY,
+        name       VARCHAR(100) NOT NULL
+    )
+
+    PARK_AMENITY (
+        park_id    CHAR(36) NOT NULL,
+        amenity_id INT      NOT NULL,
+        PRIMARY KEY (park_id, amenity_id)
+    )
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # Build park_code -> park_id map for all parks currently in DB
+    cur.execute("SELECT park_id, park_code FROM PARK WHERE park_code IS NOT NULL")
+    code_to_id: dict[str, str] = {}
+    for park_id, park_code in cur.fetchall():
+        if park_code:
+            code_to_id[park_code.lower().strip()] = park_id
+
+    link_sql = """
+        INSERT IGNORE INTO PARK_AMENITY (park_id, amenity_id)
+        VALUES (%s, %s)
+    """
+
+    seen_links: set[tuple[str, int]] = set()
+
+    try:
+        for park_code, park_id in code_to_id.items():
+            print(f"[NPS] Fetching amenities via /places for parkCode={park_code}...")
+
+            for place in fetch_amenities_for_park(park_code):
+                amenities = place.get("amenities") or []
+                if not isinstance(amenities, list):
+                    continue
+
+                for raw_name in amenities:
+                    if not isinstance(raw_name, str):
+                        continue
+                    name = raw_name.strip()
+                    if not name:
+                        continue
+
+                    # Create or look up amenity row
+                    amenity_id = _get_or_create_amenity(cur, name)
+
+                    key = (park_id, amenity_id)
+                    if key in seen_links:
+                        continue
+                    seen_links.add(key)
+
+                    cur.execute(link_sql, (park_id, amenity_id))
+
+            # tiny pause between parks
+            time.sleep(0.2)
+
+        conn.commit()
+        print("NPS: amenities ingested into AMENITY and PARK_AMENITY via /places.")
+    finally:
+        conn.close()
+     
 
 # -------------------------
 # TRAILS
 # -------------------------
 
+# Fetch places for park
 def fetch_places_for_park(park_code: str):
     start = 0
     limit = 50
@@ -480,7 +553,7 @@ def fetch_places_for_park(park_code: str):
         start += len(data)
         time.sleep(0.15)
 
-
+# Fetch things to do for park
 def fetch_things_to_do_for_park(park_code: str):
     start = 0
     limit = 50
@@ -495,7 +568,7 @@ def fetch_things_to_do_for_park(park_code: str):
         start += len(data)
         time.sleep(0.15)
 
-
+# Helper to get text fields for trail analysis
 def _get_text_fields(rec: dict) -> str:
     return " ".join([
         rec.get("title") or "",
@@ -504,7 +577,7 @@ def _get_text_fields(rec: dict) -> str:
         rec.get("description") or "",
     ])
 
-
+# Helper to determine if record looks like a trail
 def _looks_like_trail(rec: dict) -> bool:
     text = _get_text_fields(rec).lower()
     for word in ["trail", "hike", "loop", "walk", "path"]:
@@ -513,6 +586,7 @@ def _looks_like_trail(rec: dict) -> bool:
     return False
 
 
+# Helper to extract difficulty level from trail record
 def _extract_difficulty(rec: dict) -> str | None:
     text = _get_text_fields(rec).lower()
     if "easy" in text:
@@ -525,7 +599,7 @@ def _extract_difficulty(rec: dict) -> str | None:
         return "difficult"
     return None
 
-
+# Helper to extract length in miles from trail record
 def _extract_length_miles(rec: dict) -> float | None:
     text = _get_text_fields(rec).lower()
     m = re.search(r"(\d+(\.\d+)?)\s*(mile|miles|mi)\b", text)
@@ -586,14 +660,13 @@ def ingest_trails():
         conn.close()
 
 
-
+# -------------------------
+# Public entrypoint for ingest_all.py
+# -------------------------
 def ingest_nps_all():
-    """
-    Run all NPS ingests.
-    (You can comment out events in Codespaces if rate limited.)
-    """
     ingest_parks()
     ingest_campgrounds()
+    ingest_park_amenities()
     ingest_trails()
     ingest_park_alerts()
-    # ingest_events()
+    ingest_events()

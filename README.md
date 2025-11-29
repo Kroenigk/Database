@@ -20,6 +20,10 @@ pip install -r requirements.txt
 ```bash
 docker run --name parks-mysql -e MYSQL_ROOT_PASSWORD=rootpass -e MYSQL_DATABASE=national_parks_db -p 3306:3306 -d mysql:8
 ```
+- If already started before
+```bash
+docker start parks-mysql
+```
 
 4) Apply schema (see [sql/schema.sql](national-parks-explorer/sql/schema.sql))
 ```bash

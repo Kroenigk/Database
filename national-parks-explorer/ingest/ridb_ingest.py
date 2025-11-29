@@ -1,13 +1,10 @@
-
 from requests.exceptions import HTTPError
 import requests
 from typing import Iterable, Dict, Any, List, Optional, Tuple
-
 from backend.db import get_connection
 from backend.config import ( RIDB_API_KEY, RIDB_BASE_URL )
 
 HEADERS = {"apikey": RIDB_API_KEY}
-
 
 # --------------------------------------------------------------------
 # Generic helpers
@@ -25,7 +22,6 @@ def _fetch_paginated(endpoint: str, params: Dict[str, Any] | None = None) -> Ite
     if params is None:
         params = {}
 
-    # Start with a reasonable default
     params = {**params}
     if "limit" not in params:
         params["limit"] = 50
@@ -37,8 +33,9 @@ def _fetch_paginated(endpoint: str, params: Dict[str, Any] | None = None) -> Ite
             resp = requests.get(f"{RIDB_BASE_URL}/{endpoint}", headers=HEADERS, params=params)
             resp.raise_for_status()
         except HTTPError as e:
+            r = e.response
             # Stop on rate limiting instead of hammering the API
-            if resp is not None and resp.status_code == 429:
+            if r is not None and r.status_code == 429:
                 break
             raise
 
@@ -74,11 +71,7 @@ def _fetch_paginated(endpoint: str, params: Dict[str, Any] | None = None) -> Ite
             break
 
 
-def _fetch_facility_subresource(
-    facility_id: str,
-    subresource: str,
-    params: Dict[str, Any] | None = None,
-) -> Iterable[Dict[str, Any]]:
+def _fetch_facility_subresource(facility_id: str, subresource: str, params: Dict[str, Any] | None = None) -> Iterable[Dict[str, Any]]:
     """
     Convenience wrapper for:
         /facilities/{facilityId}/{subresource}
@@ -87,14 +80,12 @@ def _fetch_facility_subresource(
     endpoint = f"facilities/{facility_id}/{subresource}"
     yield from _fetch_paginated(endpoint, params=params)
 
-
 def _safe_get(rec: Dict[str, Any], *keys: str) -> Any:
     """Try multiple keys for the same semantic field."""
     for k in keys:
         if k in rec:
             return rec[k]
     return None
-
 
 # --------------------------------------------------------------------
 # Park mapping helpers (lat/lon nearest-neighbor)
@@ -143,7 +134,6 @@ def _find_nearest_park(lat: Optional[float], lon: Optional[float], parks: List[T
             best_park_id = park_id
 
     return best_park_id
-
 
 # --------------------------------------------------------------------
 # FACILITY
@@ -229,10 +219,9 @@ def ingest_facility_activities():
     """
 
     facility_activity_upsert_sql = """
-        INSERT INTO FACILITY_ACTIVITY (facility_id, activity_id)
-        VALUES (%s, %s)
-        ON DUPLICATE KEY UPDATE activity_id = VALUES(activity_id)
-    """
+    INSERT IGNORE INTO FACILITY_ACTIVITY (facility_id, activity_id)
+    VALUES (%s, %s)
+"""
 
     try:
         for facility_id in facility_ids:
@@ -270,9 +259,6 @@ def ingest_fees():
         description VARCHAR(255),
         amount      DECIMAL(10,2)
     )
-
-    this ingest:
-      - Creates a human-readable description using permit/zone names.
     """
     conn = get_connection()
     cur = conn.cursor()
@@ -287,9 +273,10 @@ def ingest_fees():
 
     try:
         for facility_id in facility_ids:
-            # Clean existing rows for idempotent ingest
+            # Clean existing rows for this facility
             cur.execute("DELETE FROM FEE WHERE facility_id = %s", (facility_id,))
 
+            # Permit entrances for this facility
             for pe in _fetch_facility_subresource(str(facility_id), "permitentrances"):
                 permit_name = _safe_get(pe, "PermitEntranceName", "permit_entrance_name")
                 permit_desc = _safe_get(pe, "PermitEntranceDescription", "permit_entrance_description")
@@ -310,16 +297,10 @@ def ingest_fees():
                     continue
 
                 # Zones under this permit entrance
-                zones_resp = requests.get(
-                    f"{RIDB_BASE_URL}/permitentrances/{permit_id}/zones",
-                    headers=HEADERS,
+                for zone in _fetch_paginated(
+                    f"permitentrances/{permit_id}/zones",
                     params={"limit": 50, "offset": 0},
-                )
-                zones_resp.raise_for_status()
-                zones_data = zones_resp.json()
-                zones = zones_data.get("RECDATA", []) or zones_data.get("zones", [])
-
-                for zone in zones:
+                ):
                     zone_name = _safe_get(zone, "ZoneName", "zone_name")
                     zone_desc = _safe_get(zone, "ZoneDescription", "zone_description")
 
@@ -338,7 +319,6 @@ def ingest_fees():
         print("RIDB: fees ingested.")
     finally:
         conn.close()
-
 
 # --------------------------------------------------------------------
 # ACCESSIBILITY
@@ -425,7 +405,6 @@ def ingest_accessibility_info():
         print("RIDB: accessibility info ingested.")
     finally:
         conn.close()
-
 
 # --------------------------------------------------------------------
 # Entry point for ingest_all
