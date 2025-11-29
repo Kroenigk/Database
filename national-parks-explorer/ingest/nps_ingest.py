@@ -1,19 +1,57 @@
-
 from backend.db import get_connection
 from backend.config import (NPS_API_KEY, NPS_BASE_URL)
 import requests
+import time
+import re  
 
 BASE_URL = NPS_BASE_URL
 
-def _get_or_create_amenity(cur, name: str) -> int:
-    """
-    Get amenity_id for a given name, inserting if needed.
+# Only ingest the 63 primary U.S. National Parks
+MAIN_PARK_CODES: set[str] = {
+    "acad","npsa","arch","badl","bibe","bisc","blca","brca","cany","care",
+    "cave","chis","cong","crla","cuva","deva","dena","drto","ever","gaar",
+    "jeff","glac","glba","grca","grte","grba","grsa","grsm","gumo","hale",
+    "havo","hosp","indu","isro","jotr","katm","kefj","kova","lacl","lavo",
+    "maca","meve","mora","neri","noca","olym","pefo","pinn","redw","romo",
+    "sagu","seki","shen","thro","viis","voya","whsa","wica","wrst","yell",
+    "yose","zion"
+}
 
-    AMENITY (
-        amenity_id INT AUTO_INCREMENT PRIMARY KEY,
-        name       VARCHAR(100) NOT NULL
-    )
+MAX_RETRY_AFTER_SECONDS = 10
+
+def _nps_get(path: str, params: dict, max_retries: int = 5):
     """
+    Wrapper around requests.get with capped backoff on 429 for Codespaces.
+    """
+    url = f"{BASE_URL}/{path.lstrip('/')}"
+    params = {**params, "api_key": NPS_API_KEY}
+
+    last_status = None
+
+    for attempt in range(max_retries):
+        resp = requests.get(url, params=params, timeout=15)
+        last_status = resp.status_code
+
+        if resp.status_code == 200:
+            return resp
+
+        if resp.status_code == 429:
+            raw = resp.headers.get("Retry-After")
+            try:
+                delay_val = int(raw) if raw else 5 + attempt * 2
+            except ValueError:
+                delay_val = 5
+            delay = min(delay_val, MAX_RETRY_AFTER_SECONDS)
+            print(f"[NPS] 429 on {path}, raw={raw!r}, sleeping {delay}s...")
+            time.sleep(delay)
+            continue
+
+        resp.raise_for_status()
+
+    raise RuntimeError(f"NPS request failed after retries: {url} (last={last_status})")
+
+
+def _get_or_create_amenity(cur, name: str) -> int:
     if not name:
         raise ValueError("Amenity name must be non-empty")
 
@@ -25,21 +63,25 @@ def _get_or_create_amenity(cur, name: str) -> int:
     cur.execute("INSERT INTO AMENITY (name) VALUES (%s)", (name,))
     return cur.lastrowid
 
+
 def fetch_all_parks():
-    params = {"api_key": NPS_API_KEY, "limit": 100}
+    """
+    Fetch all parks from NPS; filtered later to only MAIN_PARK_CODES.
+    """
+    params = {"limit": 100}
     start = 0
+
     while True:
         params["start"] = start
-        resp = requests.get(f"{BASE_URL}/parks", params=params)
-        resp.raise_for_status()
-        data = resp.json()
-        parks = data.get("data", [])
-        if not parks:
+        resp = _nps_get("parks", params)
+        data = resp.json().get("data", [])
+        if not data:
             break
-        for park in parks:
+        for park in data:
             yield park
-        start += len(parks)
-        
+        start += len(data)
+
+
 def ingest_parks():
     conn = get_connection()
     cur = conn.cursor()
@@ -56,113 +98,88 @@ def ingest_parks():
         longitude   = VALUES(longitude)
     """
 
-    state_sql = """
-      INSERT IGNORE INTO STATE (state_code, name)
-      VALUES (%s, %s)
-    """
-
-    park_state_sql = """
-      INSERT IGNORE INTO PARK_STATE (park_id, state_code)
-      VALUES (%s, %s)
-    """
+    state_sql = "INSERT IGNORE INTO STATE (state_code, name) VALUES (%s, %s)"
+    park_state_sql = "INSERT IGNORE INTO PARK_STATE (park_id, state_code) VALUES (%s, %s)"
 
     image_sql = """
       INSERT INTO IMAGE (park_id, url, alt_text, credit)
       VALUES (%s, %s, %s, %s)
-      ON DUPLICATE KEY UPDATE
-        url      = VALUES(url),
-        alt_text = VALUES(alt_text),
-        credit   = VALUES(credit)
+      ON DUPLICATE KEY UPDATE url=VALUES(url), alt_text=VALUES(alt_text), credit=VALUES(credit)
     """
 
     activity_sql = """
-        INSERT INTO ACTIVITY (activity_id, name, description)
-        VALUES (%s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-          name        = VALUES(name),
-          description = VALUES(description)
+      INSERT INTO ACTIVITY (activity_id, name, description)
+      VALUES (%s, %s, %s)
+      ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description)
     """
 
-    park_activity_sql = """
-      INSERT IGNORE INTO PARK_ACTIVITY (park_id, activity_id)
-      VALUES (%s, %s)
-    """
+    park_activity_sql = "INSERT IGNORE INTO PARK_ACTIVITY (park_id, activity_id) VALUES (%s, %s)"
 
-    park_amenity_link_sql = """
-      INSERT IGNORE INTO PARK_AMENITY (park_id, amenity_id)
-      VALUES (%s, %s)
-    """
+    park_amenity_link_sql = "INSERT IGNORE INTO PARK_AMENITY (park_id, amenity_id) VALUES (%s, %s)"
 
     try:
         for p in fetch_all_parks():
             park_id = p["id"]
             name = p.get("fullName")
-            designation = p.get("designation")
+            designation = p.get("designation") or ""
             description = p.get("description")
-            park_code = p.get("parkCode")
+            park_code_raw = p.get("parkCode") or ""
+            park_code = park_code_raw.strip().lower()
             lat = float(p["latitude"]) if p.get("latitude") else None
             lon = float(p["longitude"]) if p.get("longitude") else None
+
+            # Only ingest main 63 parks
+            if park_code not in MAIN_PARK_CODES:
+                continue
 
             cur.execute(
                 park_sql,
                 (park_id, name, designation, description, park_code, lat, lon),
             )
 
-            # states string like "CO,UT"
-            state_codes = (p.get("states") or "").split(",")
-            for code in state_codes:
+            # Parse state list
+            for code in (p.get("states") or "").split(","):
                 code = code.strip()
-                if not code:
-                    continue
-                cur.execute(state_sql, (code, state_map().get(code, "Unknown")))
-                cur.execute(park_state_sql, (park_id, code))
+                if code:
+                    cur.execute(state_sql, (code, state_map().get(code, "Unknown")))
+                    cur.execute(park_state_sql, (park_id, code))
 
             # images
             for img in p.get("images", []):
                 url = img.get("url")
-                alt_text = img.get("altText")
-                credit = img.get("credit")
-                if not url:
-                    continue
-                cur.execute(image_sql, (park_id, url, alt_text, credit))
+                if url:
+                    cur.execute(
+                        image_sql,
+                        (park_id, url, img.get("altText"), img.get("credit")),
+                    )
 
-            # activities (NPS parks)
-            for activity in p.get("activities", []):
-                activity_id = activity.get("id")
-                activity_name = activity.get("name")
-                activity_desc = activity.get("description")
-                if not activity_id or not activity_name:
-                    continue
-                cur.execute(activity_sql, (activity_id, activity_name, activity_desc))
-                cur.execute(park_activity_sql, (park_id, activity_id))
+            # activities
+            for act in p.get("activities", []):
+                act_id = act.get("id")
+                act_name = act.get("name")
+                if act_id and act_name:
+                    cur.execute(activity_sql, (act_id, act_name, act.get("description")))
+                    cur.execute(park_activity_sql, (park_id, act_id))
 
-        
+            # amenities
             for amenity in p.get("amenities", []):
-                amenity_name = amenity.get("name") or amenity.get("value")
-                if not amenity_name:
-                    continue
-                amenity_id = _get_or_create_amenity(cur, amenity_name)
-                cur.execute(park_amenity_link_sql, (park_id, amenity_id))
+                a_name = amenity.get("name") or amenity.get("value")
+                if a_name:
+                    a_id = _get_or_create_amenity(cur, a_name)
+                    cur.execute(park_amenity_link_sql, (park_id, a_id))
 
         conn.commit()
+        print("NPS: parks ingested.")
     finally:
         conn.close()
 
 
-def fetch_park_alerts():
-    params = {"api_key": NPS_API_KEY, "limit": 100}
-    start = 0
-    while True:
-        params["start"] = start
-        resp = requests.get(f"{BASE_URL}/alerts", params=params)
-        resp.raise_for_status()
-        data = resp.json()
-        parks = data.get("data", [])
-        if not parks:
-            break
-        for park in parks:
-            yield park
-        start += len(parks)
+def fetch_park_alerts_page(start: int):
+    """Alert fetcher now uses _nps_get."""
+    params = {"limit": 100, "start": start}
+    resp = _nps_get("alerts", params)
+    return resp.json().get("data", [])
+
 
 def ingest_park_alerts(max_pages: int = 10):
     conn = get_connection()
@@ -171,292 +188,412 @@ def ingest_park_alerts(max_pages: int = 10):
     insert_sql = """
       INSERT INTO PARK_ALERT (alert_id, park_id, category, title, description, issued_at, expires_at)
       VALUES (%s, %s, %s, %s, %s, %s, %s)
-      ON DUPLICATE KEY UPDATE
-        category    = VALUES(category),
-        title       = VALUES(title),
-        description = VALUES(description),
-        issued_at   = VALUES(issued_at),
-        expires_at  = VALUES(expires_at)
+      ON DUPLICATE KEY UPDATE category=VALUES(category), title=VALUES(title),
+          description=VALUES(description), issued_at=VALUES(issued_at), expires_at=VALUES(expires_at)
     """
 
-    page = 0
+    # Preload park_code → park_id (lowercase)
+    cur.execute("SELECT park_id, park_code FROM PARK")
+    code_to_id = {code.lower(): pid for (pid, code) in cur.fetchall() if code}
+
     start = 0
+    page = 0
 
-    while page < max_pages:
-        params = {
-            "api_key": NPS_API_KEY,
-            "limit": 100,
-            "start": start,
-        }
-        resp = requests.get(f"{BASE_URL}/alerts", params=params, timeout=15)
+    try:
+        while page < max_pages:
+            alerts = fetch_park_alerts_page(start)
+            if not alerts:
+                break
 
-        if resp.status_code != 200:
-            print("[ALERTS] NPS alerts request failed:", resp.status_code, resp.text[:200])
-            break
+            for alert in alerts:
+                alert_id = alert.get("id")
+                raw_code = alert.get("parkCode") or ""
+                park_code = raw_code.strip().lower()
 
-        data = resp.json().get("data", [])
-        if not data:
-            break
+                if not alert_id or not park_code:
+                    continue
 
-        for alert in data:
-            alert_id = alert.get("id")
-            park_code = alert.get("parkCode")
-            category = alert.get("category")
-            title = alert.get("title")
-            description = alert.get("description")
-            issued_at = alert.get("lastIndexedDate")  # already ISO-like string
-            expires_at = None  # NPS alerts don't usually include this; keep null for now
+                park_id = code_to_id.get(park_code)
+                if not park_id:
+                    continue  # alert for park we do not ingest
 
-            if not alert_id or not park_code:
-                continue
+                cur.execute(
+                    insert_sql,
+                    (
+                        alert_id,
+                        park_id,
+                        alert.get("category"),
+                        alert.get("title"),
+                        alert.get("description"),
+                        alert.get("lastIndexedDate"),
+                        None,
+                    ),
+                )
 
-            # Look up internal park_id from park_code
-            cur.execute(
-                "SELECT park_id FROM PARK WHERE park_code = %s LIMIT 1",
-                (park_code,),
-            )
-            row = cur.fetchone()
-            if not row:
-                # Park not in DB (maybe filtered out earlier) – skip this alert
-                continue
+            conn.commit()
+            start += len(alerts)
+            page += 1
 
-            park_id = row[0]
+        print("NPS: park alerts ingested.")
+    finally:
+        conn.close()
 
-            cur.execute(
-                insert_sql,
-                (alert_id, park_id, category, title, description, issued_at, expires_at),
-            )
-
-        conn.commit()
-
-        # next page
-        start += len(data)
-        page += 1
-
-    conn.close()
 
 def state_map():
     return {
-        "AL": "Alabama",
-        "AK": "Alaska",
-        "AZ": "Arizona",
-        "AR": "Arkansas",
-        "CA": "California",
-        "CO": "Colorado",
-        "CT": "Connecticut",
-        "DE": "Delaware",
-        "FL": "Florida",
-        "GA": "Georgia",
-        "HI": "Hawaii",
-        "ID": "Idaho",
-        "IL": "Illinois",
-        "IN": "Indiana",
-        "IA": "Iowa",
-        "KS": "Kansas",
-        "KY": "Kentucky",
-        "LA": "Louisiana",
-        "ME": "Maine",
-        "MD": "Maryland",
-        "MA": "Massachusetts",
-        "MI": "Michigan",
-        "MN": "Minnesota",
-        "MS": "Mississippi",
-        "MO": "Missouri",
-        "MT": "Montana",
-        "NE": "Nebraska",
-        "NV": "Nevada",
-        "NH": "New Hampshire",
-        "NJ": "New Jersey",
-        "NM": "New Mexico",
-        "NY": "New York",
-        "NC": "North Carolina",
-        "ND": "North Dakota",
-        "OH": "Ohio",
-        "OK": "Oklahoma",
-        "OR": "Oregon",
-        "PA": "Pennsylvania",
-        "RI": "Rhode Island",
-        "SC":  "South Carolina",
-        "SD":  "South Dakota",
-        "TN":  "Tennessee",
-        "TX":  "Texas",
-        "UT":  "Utah",
-        "VT":  "Vermont",
-        "VA":  "Virginia",
-        "WA":  "Washington",
-        "WV":  "West Virginia",
-        "WI":  "Wisconsin",
-        "WY":  "Wyoming"
+        "AL": "Alabama","AK": "Alaska","AZ": "Arizona","AR": "Arkansas","CA": "California",
+        "CO": "Colorado","CT": "Connecticut","DE": "Delaware","FL": "Florida","GA": "Georgia",
+        "HI": "Hawaii","ID": "Idaho","IL": "Illinois","IN": "Indiana","IA": "Iowa","KS": "Kansas",
+        "KY": "Kentucky","LA": "Louisiana","ME": "Maine","MD": "Maryland","MA": "Massachusetts",
+        "MI": "Michigan","MN": "Minnesota","MS": "Mississippi","MO": "Missouri","MT": "Montana",
+        "NE": "Nebraska","NV": "Nevada","NH": "New Hampshire","NJ": "New Jersey","NM": "New Mexico",
+        "NY": "New York","NC": "North Carolina","ND": "North Dakota","OH": "Ohio","OK": "Oklahoma",
+        "OR": "Oregon","PA": "Pennsylvania","RI": "Rhode Island","SC": "South Carolina",
+        "SD": "South Dakota","TN": "Tennessee","TX": "Texas","UT": "Utah","VT": "Vermont",
+        "VA": "Virginia","WA": "Washington","WV": "West Virginia","WI": "Wisconsin","WY": "Wyoming"
     }
 
-def fetch_campgrounds(park_code: str | None = None):
-    """
-    Generator for NPS /campgrounds endpoint.
 
-    If park_code is given, filters campgrounds by that parkCode.
-    Otherwise, returns all campgrounds.
-    """
-    params = {"api_key": NPS_API_KEY, "limit": 100}
+# -------------------------
+# CAMP GROUNDS
+# -------------------------
+
+def fetch_campgrounds(park_code: str | None = None):
+    params = {"limit": 100}
     if park_code:
         params["parkCode"] = park_code
 
     start = 0
     while True:
         params["start"] = start
-        resp = requests.get(f"{BASE_URL}/campgrounds", params=params)
-        resp.raise_for_status()
-        data = resp.json()
-        campgrounds = data.get("data", [])
-        if not campgrounds:
+        resp = _nps_get("campgrounds", params)
+        data = resp.json().get("data", [])
+        if not data:
             break
-        for cg in campgrounds:
+        for cg in data:
             yield cg
-        start += len(campgrounds)
+        start += len(data)
 
 
 def _extract_campground_amenity_names(cg: dict) -> set[str]:
-    """
-    Take the NPS campground 'amenities' object and flatten it
-    into a set of human-readable amenity names.
-
-    The exact shape can vary; this is intentionally conservative.
-    """
-    result: set[str] = set()
-    amenities = cg.get("amenities") or {}
-
-    for key, value in amenities.items():
-        # strings like "Yes", "Flush Toilets", "No"
+    res = set()
+    for key, value in (cg.get("amenities") or {}).items():
         if isinstance(value, str):
             v = value.strip()
             if v and v.lower() not in {"no", "none", "n/a"}:
-                result.add(v)
-
-        # lists of strings like ["Flush Toilets", "Vault Toilets"]
+                res.add(v)
         elif isinstance(value, list):
             for item in value:
-                if not isinstance(item, str):
-                    continue
-                v = item.strip()
-                if v and v.lower() not in {"no", "none", "n/a"}:
-                    result.add(v)
-
-        # dicts can be ignored or handled specially if you discover them
-
-    return result
+                if isinstance(item, str):
+                    v = item.strip()
+                    if v and v.lower() not in {"no", "none", "n/a"}:
+                        res.add(v)
+    return res
 
 
 def ingest_campgrounds(park_code: str | None = None):
-    """
-    Ingest NPS campgrounds into CAMPGROUND and CAMPGROUND_AMENITY.
-
-    CAMPGROUND (
-        campground_id INT AUTO_INCREMENT PRIMARY KEY,
-        park_id       CHAR(36)     NOT NULL,
-        name          VARCHAR(150) NOT NULL,
-        description   TEXT,
-        latitude      DECIMAL(9,6),
-        longitude     DECIMAL(9,6)
-    )
-
-    Strategy:
-      - Use NPS /campgrounds (optionally filtered by parkCode).
-      - For each campground:
-          * Map NPS parkCode -> internal PARK.park_id
-          * Upsert CAMPGROUND using (park_id, name) as logical key
-          * Extract amenity names and link via CAMPGROUND_AMENITY
-    """
     conn = get_connection()
     cur = conn.cursor()
 
-    # Preload park_code -> park_id mapping to avoid constant SELECTs
+    # Lowercase map
     cur.execute("SELECT park_id, park_code FROM PARK WHERE park_code IS NOT NULL")
-    park_by_code = {row[1]: row[0] for row in cur.fetchall() if row[1]}
+    park_by_code = {code.lower(): pid for (pid, code) in cur.fetchall() if code}
 
     campground_select_sql = """
-        SELECT campground_id
-        FROM CAMPGROUND
-        WHERE park_id = %s AND name = %s
-        LIMIT 1
+        SELECT campground_id FROM CAMPGROUND
+        WHERE park_id = %s AND name = %s LIMIT 1
     """
-
     campground_insert_sql = """
         INSERT INTO CAMPGROUND (park_id, name, description, latitude, longitude)
         VALUES (%s, %s, %s, %s, %s)
     """
-
     campground_update_sql = """
         UPDATE CAMPGROUND
-        SET description = %s,
-            latitude    = %s,
-            longitude   = %s
-        WHERE campground_id = %s
+        SET description=%s, latitude=%s, longitude=%s
+        WHERE campground_id=%s
     """
-
     link_sql = """
         INSERT IGNORE INTO CAMPGROUND_AMENITY (campground_id, amenity_id)
         VALUES (%s, %s)
     """
 
     try:
-        cg_iter = fetch_campgrounds(park_code)
-
-        for cg in cg_iter:
+        for cg in fetch_campgrounds(park_code):
             cg_name = cg.get("name")
+            raw_code = cg.get("parkCode")
+            if not cg_name or not raw_code:
+                continue
+
+            cg_code = raw_code.strip().lower()
+            park_id = park_by_code.get(cg_code)
+            if not park_id:
+                continue
+
             cg_desc = cg.get("description")
             cg_lat = float(cg["latitude"]) if cg.get("latitude") else None
             cg_lon = float(cg["longitude"]) if cg.get("longitude") else None
 
-            cg_park_code = cg.get("parkCode")
-            if not cg_name or not cg_park_code:
-                continue
-
-            park_id = park_by_code.get(cg_park_code)
-            if not park_id:
-                # Park for this campground not in DB – skip
-                continue
-
-            # Upsert CAMPGROUND by (park_id, name)
             cur.execute(campground_select_sql, (park_id, cg_name))
             row = cur.fetchone()
             if row:
-                campground_id = row[0]
-                cur.execute(
-                    campground_update_sql,
-                    (cg_desc, cg_lat, cg_lon, campground_id),
-                )
+                cg_id = row[0]
+                cur.execute(campground_update_sql, (cg_desc, cg_lat, cg_lon, cg_id))
             else:
                 cur.execute(
                     campground_insert_sql,
                     (park_id, cg_name, cg_desc, cg_lat, cg_lon),
                 )
-                campground_id = cur.lastrowid
+                cg_id = cur.lastrowid
 
-            # Amenities
-            amenity_names = _extract_campground_amenity_names(cg)
-            for a_name in amenity_names:
-                amenity_id = _get_or_create_amenity(cur, a_name)
-                cur.execute(link_sql, (campground_id, amenity_id))
+            for name in _extract_campground_amenity_names(cg):
+                a_id = _get_or_create_amenity(cur, name)
+                cur.execute(link_sql, (cg_id, a_id))
 
         conn.commit()
         print("NPS: campgrounds ingested.")
     finally:
         conn.close()
-#Todo: implement the following functions
-def fetch_events(park_id):     
-        pass
-def ingest_events(park_id):
-        #/events endpoint
-        # add events to a specific park for ingest park events
-        pass
+
+
+# -------------------------
+# EVENTS
+# -------------------------
+
+def fetch_events_for_park(park_code: str):
+    start = 0
+    limit = 50
+
+    while True:
+        params = {"parkCode": park_code, "limit": limit, "start": start}
+        resp = _nps_get("events", params)
+        data = resp.json().get("data", [])
+        if not data:
+            break
+        for ev in data:
+            yield ev
+        start += len(data)
+        time.sleep(0.2)
+
+
+def _parse_event_datetimes(ev: dict):
+    d1 = ev.get("dateStart") or ev.get("datestart")
+    d2 = ev.get("dateEnd") or ev.get("dateend")
+    t1 = ev.get("timeStart") or ev.get("timestart")
+    t2 = ev.get("timeEnd") or ev.get("timeend")
+
+    def combo(d, t): return None if not d else f"{d} {t or '00:00:00'}"
+    return combo(d1, t1), combo(d2, t2)
+
+
+def _extract_event_park_ids(ev: dict) -> list[str]:
+    """Extract GUID park IDs from events."""
+    ids = []
+
+    pid = ev.get("parkId") or ev.get("parkid")
+    if isinstance(pid, str) and pid.strip():
+        ids.append(pid.strip())
+
+    parks = ev.get("parks") or ev.get("park") or []
+    if isinstance(parks, list):
+        for p in parks:
+            if isinstance(p, dict):
+                pid2 = p.get("parkId") or p.get("id")
+                if isinstance(pid2, str) and pid2.strip():
+                    ids.append(pid2.strip())
+
+    seen = set()
+    out = []
+    for i in ids:
+        if i not in seen:
+            seen.add(i)
+            out.append(i)
+    return out
+
+
+def ingest_events():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT park_id FROM PARK")
+    valid_ids = {pid.strip() for (pid,) in cur.fetchall() if pid}
+
+    insert_sql = """
+        INSERT INTO EVENT (event_id, park_id, title, start_time, end_time)
+        VALUES (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            park_id=VALUES(park_id),
+            title=VALUES(title),
+            start_time=VALUES(start_time),
+            end_time=VALUES(end_time)
+    """
+
+    # get list of lower-case park_codes
+    cur.execute("SELECT DISTINCT park_code FROM PARK WHERE park_code IS NOT NULL")
+    park_codes = [code.lower().strip() for (code,) in cur.fetchall() if code]
+
+    seen = set()
+
+    try:
+        for code in park_codes:
+            print(f"[NPS] Fetching events for parkCode={code}...")
+            for ev in fetch_events_for_park(code):
+
+                eid = ev.get("id")
+                if not eid or eid in seen:
+                    continue
+                seen.add(eid)
+
+                title = ev.get("title") or "Untitled event"
+
+                park_ids = _extract_event_park_ids(ev)
+                park_fk = next((pid for pid in park_ids if pid in valid_ids), None)
+                if not park_fk:
+                    continue
+
+                sdt, edt = _parse_event_datetimes(ev)
+
+                cur.execute(insert_sql, (eid, park_fk, title, sdt, edt))
+
+            time.sleep(0.5)
+
+        conn.commit()
+        print("NPS: events ingested.")
+    finally:
+        conn.close()
+
+
+# -------------------------
+# TRAILS
+# -------------------------
+
+def fetch_places_for_park(park_code: str):
+    start = 0
+    limit = 50
+    while True:
+        params = {"parkCode": park_code, "limit": limit, "start": start}
+        resp = _nps_get("places", params)
+        data = resp.json().get("data", [])
+        if not data:
+            break
+        for rec in data:
+            yield rec
+        start += len(data)
+        time.sleep(0.15)
+
+
+def fetch_things_to_do_for_park(park_code: str):
+    start = 0
+    limit = 50
+    while True:
+        params = {"parkCode": park_code, "limit": limit, "start": start}
+        resp = _nps_get("thingstodo", params)
+        data = resp.json().get("data", [])
+        if not data:
+            break
+        for rec in data:
+            yield rec
+        start += len(data)
+        time.sleep(0.15)
+
+
+def _get_text_fields(rec: dict) -> str:
+    return " ".join([
+        rec.get("title") or "",
+        rec.get("listingDescription") or "",
+        rec.get("shortDescription") or "",
+        rec.get("description") or "",
+    ])
+
+
+def _looks_like_trail(rec: dict) -> bool:
+    text = _get_text_fields(rec).lower()
+    for word in ["trail", "hike", "loop", "walk", "path"]:
+        if word in text:
+            return True
+    return False
+
+
+def _extract_difficulty(rec: dict) -> str | None:
+    text = _get_text_fields(rec).lower()
+    if "easy" in text:
+        return "easy"
+    if "moderate" in text:
+        return "moderate"
+    if "strenuous" in text:
+        return "strenuous"
+    if "difficult" in text:
+        return "difficult"
+    return None
+
+
+def _extract_length_miles(rec: dict) -> float | None:
+    text = _get_text_fields(rec).lower()
+    m = re.search(r"(\d+(\.\d+)?)\s*(mile|miles|mi)\b", text)
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
 def ingest_trails():
-        #/places and /thingstodo endpoint
-        # need to scrape for trails
-        pass
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT park_id, park_code FROM PARK WHERE park_code IS NOT NULL")
+    code_to_id = {code.lower(): pid for (pid, code) in cur.fetchall() if code}
+
+    insert_sql = """
+        INSERT INTO TRAIL (park_id, name, length_miles, difficulty)
+        VALUES (%s, %s, %s, %s)
+    """
+
+    seen = set()
+
+    def process(rec: dict, park_id: str):
+        name = (rec.get("title") or rec.get("name") or "").strip()
+        if not name:
+            return
+        if not _looks_like_trail(rec):
+            return
+
+        length = _extract_length_miles(rec)
+        diff = _extract_difficulty(rec)
+
+        key = (park_id, name.lower())
+        if key in seen:
+            return
+        seen.add(key)
+
+        cur.execute(insert_sql, (park_id, name, length, diff))
+
+    try:
+        for code, park_id in code_to_id.items():
+            print(f"[NPS] Fetching trails for parkCode={code}...")
+
+            for place in fetch_places_for_park(code):
+                process(place, park_id)
+
+            for todo in fetch_things_to_do_for_park(code):
+                process(todo, park_id)
+
+            time.sleep(0.5)
+
+        conn.commit()
+        print("NPS: trails ingested.")
+    finally:
+        conn.close()
+
+
+
 def ingest_nps_all():
     """
-    Convenience wrapper used by ingest_all.py
+    Run all NPS ingests.
+    (You can comment out events in Codespaces if rate limited.)
     """
     ingest_parks()
     ingest_campgrounds()
     ingest_trails()
     ingest_park_alerts()
+    # ingest_events()

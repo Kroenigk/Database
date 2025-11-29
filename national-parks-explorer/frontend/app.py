@@ -9,10 +9,6 @@ if ROOT not in sys.path:
 import streamlit as st
 from backend.db import get_connection
 
-# -----------------------------------------------------
-# Small DB helper layer
-# -----------------------------------------------------
-
 def query_one(sql, params=None):
     conn = get_connection()
     try:
@@ -362,6 +358,17 @@ def render_park_detail(park_id: str):
                 st.write(desc or "No description provided.")
     else:
         st.write("No current alerts for this park.")
+
+# -----------------------------------------------------
+# Main app should include the following features:
+# - Sidebar with state filter and search box
+# - Park list with selection box
+# - Park detail view with images, activities, amenities, campgrounds, trails, alerts
+# - User functions (login, demo user)
+# - User favorites 
+# - Ability to add comments/reviews
+# - User can favorite parks and view their favorites
+# -----------------------------------------------------
 
 
 # -----------------------------------------------------

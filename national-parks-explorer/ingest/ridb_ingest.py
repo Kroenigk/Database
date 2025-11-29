@@ -119,11 +119,7 @@ def _load_parks(conn) -> List[Tuple[str, float, float]]:
     return parks
 
 
-def _find_nearest_park(
-    lat: Optional[float],
-    lon: Optional[float],
-    parks: List[Tuple[str, float, float]],
-) -> Optional[str]:
+def _find_nearest_park(lat: Optional[float], lon: Optional[float], parks: List[Tuple[str, float, float]]) -> Optional[str]:
     """
     Find nearest park by Euclidean distance in lat/lon degrees.
     Returns park_id or None if lat/lon missing or no parks.
@@ -194,23 +190,6 @@ def ingest_facilities():
         print("RIDB: facilities ingested.")
     finally:
         conn.close()
-
-
-# --------------------------------------------------------------------
-# AMENITY helpers
-# --------------------------------------------------------------------
-
-def _get_or_create_amenity(cur, name: str) -> int:
-    """
-    Get amenity_id for given name, inserting if needed.
-    """
-    cur.execute("SELECT amenity_id FROM AMENITY WHERE name = %s", (name,))
-    row = cur.fetchone()
-    if row:
-        return row[0]
-
-    cur.execute("INSERT INTO AMENITY (name) VALUES (%s)", (name,))
-    return cur.lastrowid
 
 
 # --------------------------------------------------------------------
@@ -292,10 +271,8 @@ def ingest_fees():
         amount      DECIMAL(10,2)
     )
 
-    Since RIDB doesn't have a simple numeric fee field everywhere,
     this ingest:
       - Creates a human-readable description using permit/zone names.
-      - Leaves amount NULL (you can enhance later if you parse fee amounts).
     """
     conn = get_connection()
     cur = conn.cursor()
@@ -421,7 +398,6 @@ def ingest_accessibility_info():
                 if not name and not value:
                     continue
 
-                # Simple truthiness check
                 def _is_true(val: str) -> bool:
                     return val in ("yes", "y", "true", "1")
 
@@ -456,10 +432,6 @@ def ingest_accessibility_info():
 # --------------------------------------------------------------------
 
 def ingest_ridb_all():
-    """
-    Convenience wrapper used by ingest_all.py
-    (Call order chosen to satisfy foreign keys where relevant.)
-    """
     ingest_facilities()
     ingest_facility_activities()
     ingest_fees()

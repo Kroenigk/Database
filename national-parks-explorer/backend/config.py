@@ -3,6 +3,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+#---------------------------------------------------------
+# Configuration settings
+#---------------------------------------------------------
+
 NPS_API_KEY = os.getenv("NPS_API_KEY", "")
 RIDB_API_KEY = os.getenv("RIDB_API_KEY", "")
 NOAA_API_TOKEN = os.getenv("NOAA_API_TOKEN", "")
@@ -10,6 +14,7 @@ NOAA_API_TOKEN = os.getenv("NOAA_API_TOKEN", "")
 RIDB_BASE_URL = os.getenv("RIDB_BASE_URL", "https://ridb.recreation.gov/api/v1")
 USGS_BASE_URL = os.getenv("USGS_BASE_URL", "https://earthquake.usgs.gov/fdsnws/event/1/query")
 NOAA_BASE_URL = os.getenv("NOAA_BASE_URL", "https://www.ncdc.noaa.gov/cdo-web/api/v2")
+NPS_BASE_URL = os.getenv("NPS_BASE_URL", "https://developer.nps.gov/api/v1")
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "127.0.0.1"),

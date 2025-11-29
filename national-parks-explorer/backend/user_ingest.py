@@ -1,6 +1,11 @@
 from .db import get_connection
 from passlib.hash import bcrypt
 
+# ---------------------------------------------------------
+# User management functions
+# This will allow creating users and retrieving user info.
+# ---------------------------------------------------------
+
 def create_user(username, email, password, role="user"):
     conn = get_connection()
     cur = conn.cursor()

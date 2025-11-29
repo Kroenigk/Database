@@ -45,7 +45,7 @@ def get_nearest_station(lat, lon):
         print(f"[NOAA] no stations found near {lat}, {lon}")
         return None
 
-    return results[0]["id"]  # e.g. "GHCND:USW00013874"
+    return results[0]["id"]
 
 
 def fetch_daily_weather(station_id, start_date, end_date):
@@ -88,7 +88,6 @@ def update_weather_for_parks(days_back: int = 7, max_parks: int = 5):
     conn = get_connection()
     cur = conn.cursor()
 
-    # Limit to a few parks so we don't hammer NOAA
     cur.execute("SELECT park_id, latitude, longitude FROM PARK LIMIT %s", (max_parks,))
     parks = cur.fetchall()
 
@@ -148,7 +147,7 @@ def update_weather_for_parks(days_back: int = 7, max_parks: int = 5):
 
 
 # ---------------------------------------------------------
-# USGS: earthquakes + safety scoring (kept simple)
+# USGS: earthquakes + safety scoring 
 # ---------------------------------------------------------
 
 def fetch_earthquakes_near(lat, lon, radius_km=200, days_back: int = 30):
@@ -227,7 +226,7 @@ def compute_weather_risk_for_park(cur, park_id):
     return min(score, 5)
 
 
-def update_safety_scores(max_parks: int = 20):
+def update_safety_scores(max_parks: int = 63):
     """
     Populate SAFETY using both USGS (earthquakes) and WEATHER (recent).
     Kept simple and resilient: skips parks on error.
