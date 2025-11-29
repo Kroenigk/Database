@@ -2,7 +2,6 @@
 Helper script to quickly create a user in APP_USER.
 
 Usage:
-
     # Create default demo user
     python -m backend.create_demo_user
 
@@ -14,7 +13,8 @@ import sys
 from passlib.hash import pbkdf2_sha256
 from backend.db import get_connection
 
-
+# This will use PBKDF2-SHA256 for hashing passwords.
+# It will take a password and return a hashed version for secure storage.
 def hash_password(password: str) -> str:
     """
     Hash a password using PBKDF2-SHA256.
@@ -22,7 +22,10 @@ def hash_password(password: str) -> str:
     """
     return pbkdf2_sha256.hash(password)
 
-
+#---------------------------------------------------------
+# Main user creation logic
+# Given a username, email, and password, create the user if not exists.
+#---------------------------------------------------------
 def create_user(username: str, email: str, password: str) -> int:
     """
     Creates a new user if username/email does not exist.
@@ -74,6 +77,8 @@ def create_user(username: str, email: str, password: str) -> int:
 
 
 def main():
+    # Parse command-line arguments for custom user creation
+    # If no arguments, create default demo user
     if len(sys.argv) == 4:
         username = sys.argv[1]
         email = sys.argv[2]

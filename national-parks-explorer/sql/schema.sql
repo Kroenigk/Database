@@ -1,6 +1,10 @@
 -- National Parks Explorer Schema
 -- Run: mysql -h host -u user -p DB_NAME < schema.sql
 
+-- =========================================================
+-- Core tables: states, parks, activities, amenities, users
+-- =========================================================
+
 CREATE TABLE STATE (
     state_code CHAR(2) PRIMARY KEY,
     name       VARCHAR(50)

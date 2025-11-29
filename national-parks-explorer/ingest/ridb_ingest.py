@@ -1,13 +1,10 @@
-
 from requests.exceptions import HTTPError
 import requests
 from typing import Iterable, Dict, Any, List, Optional, Tuple
-
 from backend.db import get_connection
 from backend.config import ( RIDB_API_KEY, RIDB_BASE_URL )
 
 HEADERS = {"apikey": RIDB_API_KEY}
-
 
 # --------------------------------------------------------------------
 # Generic helpers
@@ -25,7 +22,6 @@ def _fetch_paginated(endpoint: str, params: Dict[str, Any] | None = None) -> Ite
     if params is None:
         params = {}
 
-    # Start with a reasonable default
     params = {**params}
     if "limit" not in params:
         params["limit"] = 50
@@ -37,8 +33,9 @@ def _fetch_paginated(endpoint: str, params: Dict[str, Any] | None = None) -> Ite
             resp = requests.get(f"{RIDB_BASE_URL}/{endpoint}", headers=HEADERS, params=params)
             resp.raise_for_status()
         except HTTPError as e:
+            r = e.response
             # Stop on rate limiting instead of hammering the API
-            if resp is not None and resp.status_code == 429:
+            if r is not None and r.status_code == 429:
                 break
             raise
 
@@ -74,11 +71,7 @@ def _fetch_paginated(endpoint: str, params: Dict[str, Any] | None = None) -> Ite
             break
 
 
-def _fetch_facility_subresource(
-    facility_id: str,
-    subresource: str,
-    params: Dict[str, Any] | None = None,
-) -> Iterable[Dict[str, Any]]:
+def _fetch_facility_subresource(facility_id: str, subresource: str, params: Dict[str, Any] | None = None) -> Iterable[Dict[str, Any]]:
     """
     Convenience wrapper for:
         /facilities/{facilityId}/{subresource}
@@ -87,14 +80,12 @@ def _fetch_facility_subresource(
     endpoint = f"facilities/{facility_id}/{subresource}"
     yield from _fetch_paginated(endpoint, params=params)
 
-
 def _safe_get(rec: Dict[str, Any], *keys: str) -> Any:
     """Try multiple keys for the same semantic field."""
     for k in keys:
         if k in rec:
             return rec[k]
     return None
-
 
 # --------------------------------------------------------------------
 # Park mapping helpers (lat/lon nearest-neighbor)
@@ -119,11 +110,7 @@ def _load_parks(conn) -> List[Tuple[str, float, float]]:
     return parks
 
 
-def _find_nearest_park(
-    lat: Optional[float],
-    lon: Optional[float],
-    parks: List[Tuple[str, float, float]],
-) -> Optional[str]:
+def _find_nearest_park(lat: Optional[float], lon: Optional[float], parks: List[Tuple[str, float, float]]) -> Optional[str]:
     """
     Find nearest park by Euclidean distance in lat/lon degrees.
     Returns park_id or None if lat/lon missing or no parks.
@@ -147,7 +134,6 @@ def _find_nearest_park(
             best_park_id = park_id
 
     return best_park_id
-
 
 # --------------------------------------------------------------------
 # FACILITY
@@ -197,23 +183,6 @@ def ingest_facilities():
 
 
 # --------------------------------------------------------------------
-# AMENITY helpers
-# --------------------------------------------------------------------
-
-def _get_or_create_amenity(cur, name: str) -> int:
-    """
-    Get amenity_id for given name, inserting if needed.
-    """
-    cur.execute("SELECT amenity_id FROM AMENITY WHERE name = %s", (name,))
-    row = cur.fetchone()
-    if row:
-        return row[0]
-
-    cur.execute("INSERT INTO AMENITY (name) VALUES (%s)", (name,))
-    return cur.lastrowid
-
-
-# --------------------------------------------------------------------
 # ACTIVITY + FACILITY_ACTIVITY
 # --------------------------------------------------------------------
 
@@ -250,10 +219,9 @@ def ingest_facility_activities():
     """
 
     facility_activity_upsert_sql = """
-        INSERT INTO FACILITY_ACTIVITY (facility_id, activity_id)
-        VALUES (%s, %s)
-        ON DUPLICATE KEY UPDATE activity_id = VALUES(activity_id)
-    """
+    INSERT IGNORE INTO FACILITY_ACTIVITY (facility_id, activity_id)
+    VALUES (%s, %s)
+"""
 
     try:
         for facility_id in facility_ids:
@@ -291,11 +259,6 @@ def ingest_fees():
         description VARCHAR(255),
         amount      DECIMAL(10,2)
     )
-
-    Since RIDB doesn't have a simple numeric fee field everywhere,
-    this ingest:
-      - Creates a human-readable description using permit/zone names.
-      - Leaves amount NULL (you can enhance later if you parse fee amounts).
     """
     conn = get_connection()
     cur = conn.cursor()
@@ -310,9 +273,10 @@ def ingest_fees():
 
     try:
         for facility_id in facility_ids:
-            # Clean existing rows for idempotent ingest
+            # Clean existing rows for this facility
             cur.execute("DELETE FROM FEE WHERE facility_id = %s", (facility_id,))
 
+            # Permit entrances for this facility
             for pe in _fetch_facility_subresource(str(facility_id), "permitentrances"):
                 permit_name = _safe_get(pe, "PermitEntranceName", "permit_entrance_name")
                 permit_desc = _safe_get(pe, "PermitEntranceDescription", "permit_entrance_description")
@@ -333,16 +297,10 @@ def ingest_fees():
                     continue
 
                 # Zones under this permit entrance
-                zones_resp = requests.get(
-                    f"{RIDB_BASE_URL}/permitentrances/{permit_id}/zones",
-                    headers=HEADERS,
+                for zone in _fetch_paginated(
+                    f"permitentrances/{permit_id}/zones",
                     params={"limit": 50, "offset": 0},
-                )
-                zones_resp.raise_for_status()
-                zones_data = zones_resp.json()
-                zones = zones_data.get("RECDATA", []) or zones_data.get("zones", [])
-
-                for zone in zones:
+                ):
                     zone_name = _safe_get(zone, "ZoneName", "zone_name")
                     zone_desc = _safe_get(zone, "ZoneDescription", "zone_description")
 
@@ -361,7 +319,6 @@ def ingest_fees():
         print("RIDB: fees ingested.")
     finally:
         conn.close()
-
 
 # --------------------------------------------------------------------
 # ACCESSIBILITY
@@ -421,7 +378,6 @@ def ingest_accessibility_info():
                 if not name and not value:
                     continue
 
-                # Simple truthiness check
                 def _is_true(val: str) -> bool:
                     return val in ("yes", "y", "true", "1")
 
@@ -450,16 +406,11 @@ def ingest_accessibility_info():
     finally:
         conn.close()
 
-
 # --------------------------------------------------------------------
 # Entry point for ingest_all
 # --------------------------------------------------------------------
 
 def ingest_ridb_all():
-    """
-    Convenience wrapper used by ingest_all.py
-    (Call order chosen to satisfy foreign keys where relevant.)
-    """
     ingest_facilities()
     ingest_facility_activities()
     ingest_fees()

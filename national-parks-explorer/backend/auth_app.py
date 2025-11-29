@@ -10,7 +10,7 @@ from backend.config import FLASK_SECRET_KEY
 
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = FLASK_SECRET_KEY  # use .env-configured key
+app.config["SECRET_KEY"] = FLASK_SECRET_KEY
 
 # Allow your frontend to talk to this API
 CORS(app, supports_credentials=True)
@@ -18,16 +18,16 @@ CORS(app, supports_credentials=True)
 
 # --------- Helpers ---------
 
+# Password hashing and verification
 def hash_password(password: str) -> str:
     """Hash a password using PBKDF2-SHA256."""
     return pbkdf2_sha256.hash(password)
-
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Verify a password using PBKDF2-SHA256."""
     return pbkdf2_sha256.verify(plain, hashed)
 
-
+#--------- DB connection per request ---------
 def get_db():
     if "db" not in g:
         g.db = get_connection()
@@ -39,7 +39,6 @@ def teardown_db(exc):
     db = g.pop("db", None)
     if db is not None:
         db.close()
-
 
 def get_current_user_from_cookie():
     """
@@ -77,6 +76,7 @@ def get_current_user_from_cookie():
     return g.user
 
 
+#--------- Auth decorators and logging ---------
 def login_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
