@@ -71,7 +71,6 @@ def render_park_list(search, state_code):
 
 
 def add_to_favorites(park_id: str):
-    # TODO: write to USER_FAVORITE table using st.session_state.user_id
     st.success(f"[placeholder] Added park {park_id} to favorites.")
 
 
