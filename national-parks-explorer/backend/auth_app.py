@@ -1,4 +1,3 @@
-# auth_app.py
 from flask import Flask, request, jsonify, make_response, g
 from flask_cors import CORS
 from passlib.hash import pbkdf2_sha256
