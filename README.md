@@ -53,17 +53,12 @@ FLASK_SECRET_KEY=YOUR_KEY
 python -m ingest.ingest_all
 ```
 
-7) Create a user (see [backend/create_demo_user.py](national-parks-explorer/backend/create_demo_user.py))
-```bash
-python -m backend.create_demo_user kylie kylie@example.com MyStrongPass!
-```
-
-8) Run the backend API
+7) Run the backend API
 ```bash
 python -m backend.auth_app
 ```
 
-9) Run Streamlit app (see [frontend/app.py](national-parks-explorer/frontend/app.py))
+8) Run Streamlit app (see [frontend/app.py](national-parks-explorer/frontend/app.py))
 ```bash
 streamlit run frontend/app.py
 ```
