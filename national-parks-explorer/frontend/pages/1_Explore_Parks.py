@@ -6,6 +6,11 @@ from park_data import (
     get_park_detail,
     get_basic_counts,
 )
+from backend.db import get_connection
+import requests
+import os
+
+API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # --- user auth guard ---
 if not st.session_state.get("authenticated", False):
@@ -69,10 +74,27 @@ def render_park_list(search, state_code):
     idx = park_names.index(choice)
     return parks[idx]["park_id"]
 
-
 def add_to_favorites(park_id: str):
-    st.success(f"[placeholder] Added park {park_id} to favorites.")
+    user = st.session_state.get("user")
+    if not user:
+        st.error("You must be logged in.")
+        return
 
+    session_id = str(user["session_id"])  # <-- force to string
+
+    try:
+        resp = requests.post(
+            f"{API_BASE}/api/parks/{park_id}/favorite",
+            cookies={"session_id": session_id},
+            timeout=5,
+        )
+        data = resp.json()
+        if resp.status_code != 200:
+            st.error(data.get("error", "Failed to favorite park."))
+        else:
+            st.success("Added to favorites!")
+    except Exception as e:
+        st.error(f"Error contacting backend: {e}")
 
 def make_reservation(park_id: str):
     st.info(f"[placeholder] Reservation flow for park {park_id}.")

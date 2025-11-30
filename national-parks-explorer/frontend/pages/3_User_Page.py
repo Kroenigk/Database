@@ -21,6 +21,28 @@ tab_profile, tab_favorites, tab_reviews = st.tabs(
     ["Profile", "Favorite Parks", "My Reviews"]
 )
 
+def remove_from_favorites(park_id: str):
+    user = st.session_state.get("user")
+    if not user:
+        st.error("You must be logged in to remove favorites.")
+        return
+
+    session_id = str(user["session_id"])  # <-- cast to str
+
+    try:
+        resp = requests.delete(
+            f"{API_BASE}/api/parks/{park_id}/favorite",
+            cookies={"session_id": session_id},
+            timeout=5,
+        )
+        data = resp.json()
+        if resp.status_code != 200:
+            st.error(data.get("error", "Failed to remove favorite"))
+        else:
+            st.success(f"Removed park {park_id} from favorites")
+    except Exception as e:
+        st.error(f"Error contacting backend: {e}")
+
 # ---------------- Profile tab ----------------
 with tab_profile:
     st.subheader("Profile")
@@ -75,6 +97,10 @@ with tab_favorites:
                     with st.container(border=True):
                         st.markdown(f"**{fav['name']}**")
                         st.caption(f"{fav['designation']} · ID: {fav['park_id']}")
+                        if st.button("Remove from Favorites", key=f"remove_fav_{fav['park_id']}"):
+                            remove_from_favorites(fav['park_id'])
+                            st.success(f"Removed {fav['name']} from favorites.")
+                            st.rerun()
 
 # ---------------- Reviews tab ----------------
 with tab_reviews:
