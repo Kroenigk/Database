@@ -46,6 +46,7 @@ RIDB_BASE_URL=https://ridb.recreation.gov/api/v1
 USGS_BASE_URL=https://earthquake.usgs.gov/fdsnws/event/1/query
 NOAA_BASE_URL=https://www.ncdc.noaa.gov/cdo-web/api/v2
 FLASK_SECRET_KEY=YOUR_KEY
+API_BASE_URL=YOUR_HOST
 ```
 
 6) Ingest data (see [backend/ingest.py](national-parks-explorer/backend/ingest.py))

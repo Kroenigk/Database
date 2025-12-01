@@ -2,12 +2,14 @@ import os
 import sys
 import streamlit as st
 
+# This will allow us direct connection to backend
 ROOT = os.path.dirname(os.path.dirname(__file__))
 if ROOT not in sys.path:
     sys.path.append(ROOT)
 
 from backend.db import get_connection
 
+# This will search for one result of a query and fetches the data
 def query_one(sql, params=None):
     conn = get_connection()
     try:
@@ -17,6 +19,7 @@ def query_one(sql, params=None):
     finally:
         conn.close()
 
+# This will search for all matching results of a query and fetches the data
 def query_all(sql, params=None):
     conn = get_connection()
     try:
@@ -26,6 +29,7 @@ def query_all(sql, params=None):
     finally:
         conn.close()
 
+# This will get all of the states and order them by their state code
 @st.cache_data(show_spinner=False)
 def get_states():
     rows = query_all(
@@ -33,12 +37,13 @@ def get_states():
     )
     return [{"code": c, "name": n} for (c, n) in rows]
 
-
+# This will get all of the national parks in the database
 @st.cache_data(show_spinner=True)
 def get_parks(search: str | None = None, state_code: str | None = None):
     params = []
     where_clauses = []
 
+    # It will append the name and state code to display
     if search:
         where_clauses.append("p.name LIKE %s")
         params.append(f"%{search}%")
@@ -51,6 +56,9 @@ def get_parks(search: str | None = None, state_code: str | None = None):
     if where_sql:
         where_sql = "WHERE " + where_sql
 
+    # This SQL will return the park_id, name, designation, and state code of a park 
+    # It will them group them by park_id, name, and designation
+    # With the results ordered by name
     sql = f"""
         SELECT
             p.park_id,
@@ -66,6 +74,7 @@ def get_parks(search: str | None = None, state_code: str | None = None):
     """
     rows = query_all(sql, params)
     parks = []
+    # All rows appended to parks for later user
     for park_id, name, designation, states in rows:
         parks.append(
             {
@@ -77,7 +86,7 @@ def get_parks(search: str | None = None, state_code: str | None = None):
         )
     return parks
 
-
+# This gets all the details attached to a park id such basic info, images, trails, campgrounds, etc
 @st.cache_data(show_spinner=True)
 def get_park_detail(park_id: str):
     # Basic park info
@@ -164,6 +173,7 @@ def get_park_detail(park_id: str):
         (park_id,),
     )
 
+    # This returns all the collected information related to a specific park
     return {
         "name": name,
         "designation": designation,
@@ -178,7 +188,7 @@ def get_park_detail(park_id: str):
         "alerts": alerts,
     }
 
-
+# This just gets basic counts of all the parks, campgrounds, trails, facilities, and alerts
 @st.cache_data(show_spinner=False)
 def get_basic_counts():
     sqls = {

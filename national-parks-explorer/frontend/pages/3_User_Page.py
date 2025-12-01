@@ -21,15 +21,19 @@ tab_profile, tab_favorites, tab_reviews = st.tabs(
     ["Profile", "Favorite Parks", "My Reviews"]
 )
 
+# ------ Removes a Park from a Users favorites ---------
 def remove_from_favorites(park_id: str):
+    # uses the streamlit session state to get the current user's information
     user = st.session_state.get("user")
     if not user:
         st.error("You must be logged in to remove favorites.")
         return
 
-    session_id = str(user["session_id"])  # <-- cast to str
+    #Gets the session_id that is attached to the user session
+    session_id = str(user["session_id"])
 
     try:
+        #uses the flask API to delete the park from the user's favorities and attached the action to a session id
         resp = requests.delete(
             f"{API_BASE}/api/parks/{park_id}/favorite",
             cookies={"session_id": session_id},
@@ -45,6 +49,7 @@ def remove_from_favorites(park_id: str):
 
 # ---------------- Profile tab ----------------
 with tab_profile:
+    # This displays the user's basic information
     st.subheader("Profile")
     st.write(f"**User ID:** {user.get('user_id')}")
     st.write(f"**Username:** {user.get('username')}")
@@ -53,7 +58,7 @@ with tab_profile:
 
     st.markdown("---")
     if st.button("Log out"):
-        # inform Flask backend too
+        # inform Flask backend too that the user has logged out
         try:
             requests.post(
                 f"{API_BASE}/api/auth/logout",
@@ -63,6 +68,7 @@ with tab_profile:
         except Exception:
             pass
 
+        # Since the user has logged out, the session is no longer authenicated and there is no user
         st.session_state.authenticated = False
         st.session_state.user = None
         st.success("Logged out. Go back to the main page to log in again.")
@@ -70,12 +76,13 @@ with tab_profile:
 
 # ---------------- Favorites tab ----------------
 with tab_favorites:
+    # This displays the users favorite parks and their ids
     st.subheader("Favorite Parks")
 
     if not session_id:
         st.error("No session_id available; please log in again.")
     else:
-        # GET /api/parks/favorites
+        # GET /api/parks/favorites to access user favorite information so we don't ahve to directly take the the database
         try:
             resp = requests.get(
                 f"{API_BASE}/api/parks/favorites",
@@ -95,8 +102,10 @@ with tab_favorites:
             else:
                 for fav in favorites:
                     with st.container(border=True):
+                        # Displays the park in its own container
                         st.markdown(f"**{fav['name']}**")
                         st.caption(f"{fav['designation']} · ID: {fav['park_id']}")
+                        # A User can remove a park from their favorites by clicking a button
                         if st.button("Remove from Favorites", key=f"remove_fav_{fav['park_id']}"):
                             remove_from_favorites(fav['park_id'])
                             st.success(f"Removed {fav['name']} from favorites.")
@@ -104,6 +113,7 @@ with tab_favorites:
 
 # ---------------- Reviews tab ----------------
 with tab_reviews:
+    # This will contain all of the user's reviews
     st.subheader("My Reviews")
     st.info(
         "This section will list your park and trail reviews once backend "

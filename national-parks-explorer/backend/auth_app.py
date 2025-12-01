@@ -7,11 +7,11 @@ from functools import wraps
 from backend.db import get_connection
 from backend.config import FLASK_SECRET_KEY
 
-
+# This is the start of the Flask API
 app = Flask(__name__)
 app.config["SECRET_KEY"] = FLASK_SECRET_KEY
 
-# Allow your frontend to talk to this API
+# Allow your frontend to talk to this API so we can add, read, update, delete, and filter information as needed
 CORS(app, supports_credentials=True)
 
 
@@ -19,11 +19,13 @@ CORS(app, supports_credentials=True)
 
 # Password hashing and verification
 def hash_password(password: str) -> str:
-    """Hash a password using PBKDF2-SHA256."""
+    # A User's password is stored as a hash for good security
+    # Not necessary for this project, but it's good practice
     return pbkdf2_sha256.hash(password)
 
 def verify_password(plain: str, hashed: str) -> bool:
-    """Verify a password using PBKDF2-SHA256."""
+    # This will verify that the plain password matches to its respective hash
+    # This will be used for verification of passwords
     return pbkdf2_sha256.verify(plain, hashed)
 
 #--------- DB connection per request ---------
@@ -40,10 +42,8 @@ def teardown_db(exc):
         db.close()
 
 def get_current_user_from_cookie():
-    """
-    Look up current user from USER_SESSION based on session_id cookie.
-    Attach user info to g.user.
-    """
+   # Look up current user from USER_SESSION based on session_id cookie.
+   # Attach user info to g.user.
     if hasattr(g, "user"):
         return g.user
 
@@ -54,6 +54,7 @@ def get_current_user_from_cookie():
 
     db = get_db()
     cur = db.cursor()
+    # Retrieve the user's info from the matching session id by joining the User session and App user tables
     cur.execute(
         """
         SELECT s.session_id, s.user_id, u.username, u.role
@@ -64,6 +65,7 @@ def get_current_user_from_cookie():
         (session_id,),
     )
     row = cur.fetchone()
+    # Finds the user that it maps to and attached the info to g.user
     if row:
         sid, user_id, username, role = row
         g.user = {
@@ -76,6 +78,7 @@ def get_current_user_from_cookie():
 
 
 #--------- Auth decorators and logging ---------
+# Forces user to be logged in before the user can access whatever the decorator is attached to 
 def login_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -85,7 +88,7 @@ def login_required(fn):
         return fn(*args, **kwargs)
     return wrapper
 
-
+# This will log all the attivity that a user partakes in to the activitiy log
 def log_activity(session_id: int, user_id: int, action: str):
     db = get_db()
     cur = db.cursor()
@@ -101,6 +104,8 @@ def log_activity(session_id: int, user_id: int, action: str):
 
 # --------- Auth routes ---------
 
+# This endpoint will be used for a user to sign up from the frontend
+# The information will be properly handled by the API and added to the backedn
 @app.post("/api/auth/signup")
 def signup():
     data = request.get_json(force=True)
@@ -114,16 +119,19 @@ def signup():
     db = get_db()
     cur = db.cursor()
 
-    # Check uniqueness
+    # Check uniqueness, no duplicates are allowed
     cur.execute(
         "SELECT user_id FROM APP_USER WHERE username = %s OR email = %s",
         (username, email),
     )
+
+    # Error if a user is found - It would be an issue if their were duplicate users
     if cur.fetchone():
         return jsonify({"error": "Username or email already in use"}), 400
 
     password_hash = hash_password(password)
 
+    # Information is then passed to the database
     cur.execute(
         """
         INSERT INTO APP_USER (username, email, password_hash, role)
@@ -135,7 +143,7 @@ def signup():
 
     return jsonify({"message": "User created"}), 201
 
-
+# This endpoint will allow for a post request to check if there exists a user that matchs the provide info
 @app.post("/api/auth/login")
 def login():
     data = request.get_json(force=True)
@@ -156,6 +164,8 @@ def login():
         (username_or_email, username_or_email),
     )
     row = cur.fetchone()
+
+    # If no user is found, then it causes an error
     if not row:
         return jsonify({"error": "Invalid credentials"}), 401
 
@@ -164,7 +174,7 @@ def login():
     if not verify_password(password, password_hash):
         return jsonify({"error": "Invalid credentials"}), 401
 
-    # Create session
+    # Create session with given user information
     cur.execute(
         "INSERT INTO USER_SESSION (user_id, login_time) VALUES (%s, NOW())",
         (user_id,),
@@ -175,19 +185,20 @@ def login():
     resp = make_response(
         jsonify({"message": "Logged in", "user_id": user_id, "role": role})
     )
-    # Session cookie
+    # Session cookie - this will be used later
     resp.set_cookie(
         "session_id",
         str(session_id),
         httponly=True,
-        secure=False,  # set True in production with HTTPS
+        secure=False, 
         samesite="Lax",
     )
     return resp
 
-
+# This will allow a user to log out, ending the user session, thus the session will need an update to reflect the end of the session
 @app.post("/api/auth/logout")
 def logout():
+    # Cookie info used to find the specific session that we must modify
     session_id = request.cookies.get("session_id")
     if session_id:
         db = get_db()
@@ -206,7 +217,7 @@ def logout():
     resp.delete_cookie("session_id")
     return resp
 
-
+# This will return the currect user attacjed to the cookie if they exist
 @app.get("/api/auth/me")
 def get_me():
     user = get_current_user_from_cookie()
@@ -215,8 +226,9 @@ def get_me():
     return jsonify({"user": user})
 
 
-# --------- Example user features ---------
+# --------- user features ---------
 
+# This will add a park to a users favorites
 @app.post("/api/parks/<park_id>/favorite")
 @login_required
 def favorite_park(park_id):
@@ -238,7 +250,7 @@ def favorite_park(park_id):
 
     return jsonify({"message": "Park favorited"})
 
-
+# This will remove a park from a user's favorites
 @app.delete("/api/parks/<park_id>/favorite")
 @login_required
 def unfavorite_park(park_id):
@@ -256,7 +268,7 @@ def unfavorite_park(park_id):
 
     return jsonify({"message": "Park unfavorited"})
 
-
+# This will return all of the parks that a user has favorited
 @app.get("/api/parks/favorites")
 @login_required
 def list_favorites():
@@ -281,7 +293,7 @@ def list_favorites():
     ]
     return jsonify({"favorites": favorites})
 
-
+# This will add a review to a specific park
 @app.post("/api/parks/<park_id>/reviews")
 @login_required
 def create_park_review(park_id):
@@ -309,7 +321,7 @@ def create_park_review(park_id):
 
     return jsonify({"message": "Review created"}), 201
 
-
+# This will return all of the reviews attached to a specific park id
 @app.get("/api/parks/<park_id>/reviews")
 def list_park_reviews(park_id):
     db = get_db()
