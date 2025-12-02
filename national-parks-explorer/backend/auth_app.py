@@ -323,6 +323,7 @@ def create_park_review(park_id):
 
 # This will return all of the reviews attached to a specific park id
 @app.get("/api/parks/<park_id>/reviews")
+@login_required
 def list_park_reviews(park_id):
     db = get_db()
     cur = db.cursor()
@@ -351,6 +352,267 @@ def list_park_reviews(park_id):
         )
     return jsonify({"reviews": reviews})
 
+
+# ----- Trip Log  Routes ----
+@app.get("/api/triplog")
+@login_required
+def list_triplog():
+    # This will get all of the trip log entries attached to a user_id
+    user = g.user
+    db = get_db()
+    cur = db.cursor()
+    # Query trip log info joined with park name
+    cur.execute(
+        """
+        SELECT t.trip_id, t.user_id, t.park_id, t.start_date, t.end_date, t.notes, p.name
+        FROM TRIP_LOG t
+        JOIN PARK p ON p.park_id = t.park_id
+        WHERE t.user_id = %s
+        ORDER BY t.trip_id DESC
+        """,
+        (user["user_id"],),
+    )
+
+    rows = cur.fetchall()
+
+    triplog = []
+    for trip_id, user_id, park_id, start_date, end_date, notes, park_name in rows:
+        triplog.append(
+            {
+                "trip_id": trip_id,
+                "user_id": user_id,
+                "park_id": park_id,
+                "park_name": park_name,
+                "start_date": start_date,
+                "end_date": end_date,
+                "notes": notes,
+            }
+        )
+
+    return jsonify({"triplog": triplog})
+
+
+@app.post("/api/triplog")
+@login_required
+def create_triplog():
+    # This will create a new trip log entry
+    user = g.user
+    data = request.get_json(force=True)
+    park_id = data.get("park_id")
+    start_date = data.get("start_date")
+    end_date = data.get("end_date")
+    notes = data.get("notes")
+
+    # Ensure required fields are present
+    if not park_id or not start_date or not end_date:
+        return jsonify({"error": "park_id, start_date, and end_date are required"}), 400
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        INSERT INTO TRIP_LOG (user_id, park_id, start_date, end_date, notes)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (user["user_id"], park_id, start_date, end_date, notes),
+    )
+    db.commit()
+    trip_id = cur.lastrowid
+
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"CREATE_TRIPLOG id={trip_id}",
+    )
+
+    return jsonify(
+        {
+            "triplog": {
+                "trip_id": trip_id,
+                "user_id": user["user_id"],
+                "park_id": park_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "notes": notes,
+            }
+        }
+    ), 201
+
+
+@app.put("/api/triplog/<int:trip_id>")
+@login_required
+def update_triplog(trip_id):
+    # This will update a specific trip log entry
+    user = g.user
+    data = request.get_json(force=True)
+
+    start_date = data.get("start_date")
+    end_date = data.get("end_date")
+    notes = data.get("notes")
+
+    if not start_date or not end_date:
+        return jsonify({"error": "start_date and end_date are required"}), 400
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        UPDATE TRIP_LOG
+        SET start_date = %s, end_date = %s, notes = %s
+        WHERE trip_id = %s AND user_id = %s
+        """,
+        (start_date, end_date, notes, trip_id, user["user_id"]),
+    )
+    db.commit()
+
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"UPDATE_TRIPLOG trip_id={trip_id}",
+    )
+
+    return jsonify(
+        {
+            "message": "Triplog updated",
+            "triplog": {
+                "trip_id": trip_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "notes": notes,
+            },
+        }
+    )
+
+# ----- Wishlist Routes -------
+@app.post("/api/wishlist")
+@login_required
+def create_wishlist_trip():
+    # This will get all of the information needed to create a wishlist trip entry
+    user = g.user
+    data = request.get_json(force=True)
+    park_id = data.get("park_id")
+    target_season = data.get("target_season")
+    notes = data.get("notes")
+
+    # This makes sure that all info is there
+    if not park_id or not target_season:
+        return jsonify({"error": "park_id and target_season are required"}), 400
+
+    db = get_db()
+    cur = db.cursor()
+    # This will add the info to the database
+    cur.execute(
+        """
+        INSERT INTO WISHLIST_TRIP (user_id, park_id, target_season, notes)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (user["user_id"], park_id, target_season, notes),
+    )
+    # This will save the info
+    db.commit()
+    wishlist_id = cur.lastrowid
+
+    # This statement will log the activity to the activity log
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"CREATE_WISHLIST_TRIP id={wishlist_id}",
+    )
+
+    return jsonify(
+        {
+            "wishlist": {
+                "wishlist_id": wishlist_id,
+                "user_id": user["user_id"],
+                "park_id": park_id,
+                "target_season": target_season,
+                "notes": notes,
+            }
+        }
+    ), 201
+
+
+@app.get("/api/wishlist")
+@login_required
+def list_wishlist_trips():
+    # This will get all of the wishlist trips attached to a user_id
+    user = g.user
+    db = get_db()
+    cur = db.cursor()
+    # This queries the infomation from the database and retrieves all necessary info through joins
+    cur.execute(
+        """
+        SELECT w.wishlist_id, w.user_id, w.park_id, w.target_season, w.notes, p.name
+        FROM WISHLIST_TRIP w
+        JOIN PARK p ON p.park_id = w.park_id
+        WHERE w.user_id = %s
+        ORDER BY w.wishlist_id DESC
+        """,
+        (user["user_id"],),
+    )
+
+    rows = cur.fetchall()
+
+    # All of the information that is attached to our query will be place in wishlist to be displayd
+    wishlist = []
+    for wishlist_id, user_id, park_id, target_season, notes, park_name in rows:
+        wishlist.append(
+            {
+                "wishlist_id": wishlist_id,
+                "user_id": user_id,
+                "park_id": park_id,
+                "park_name": park_name,
+                "target_season": target_season,
+                "notes": notes,
+            }
+        )
+
+    return jsonify({"wishlist": wishlist})
+
+
+@app.put("/api/wishlist/<int:wishlist_id>")
+@login_required
+def update_wishlist_trip(wishlist_id):
+    # This will find a specific wishlist trip entry to be updated with the passed data
+    user = g.user
+    data = request.get_json(force=True)
+
+    target_season = data.get("target_season")
+    notes = data.get("notes")
+
+    if not target_season:
+        return jsonify({"error": "target_season is required"}), 400
+
+    db = get_db()
+    cur = db.cursor()
+    # This statement will update the entry with the new information
+    cur.execute(
+        """
+        UPDATE WISHLIST_TRIP
+        SET target_season = %s, notes = %s
+        WHERE wishlist_id = %s AND user_id = %s
+        """,
+        (target_season, notes, wishlist_id, user["user_id"]),
+    )
+    db.commit()
+
+    # Log activity to activity log
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"UPDATE_WISHLIST_TRIP wishlist_id={wishlist_id}",
+    )
+
+    return jsonify(
+        {
+            "message": "Wishlist trip updated",
+            "wishlist": {
+                "wishlist_id": wishlist_id,
+                "target_season": target_season,
+                "notes": notes,
+            },
+        }
+    )
 
 if __name__ == "__main__":
     # For local dev

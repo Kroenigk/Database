@@ -4,6 +4,7 @@ import streamlit as st
 from frontend.park_data import get_parks
 from backend.db import get_connection
 from datetime import date
+import requests
 
 # This is where the backend runs, so we can make API request to it instead of directly interacting with the database
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
@@ -34,137 +35,180 @@ tab_log, tab_wishlist = st.tabs(["Trip Log", "Wishlist Trips"])
 with tab_log:
     st.subheader("Add a trip log entry")
 
-    # Park selection - this will allow the user to have a limited selection and the necessary info will be at hand
+    user = st.session_state.get("user")
+    if not user:
+        st.warning("Please log in to manage your trip log.")
+        st.stop()
+
+    session_id = str(user["session_id"])
+
+    # Park selection - limited to parks in the DB
     parks = get_parks()
     park_labels_log = [f"{p['name']} ({p['park_id']})" for p in parks]
 
-    # The selectbox has its own key as there are multiple selectboxes in use, so they each need their own unique identifier
     selected_label_log = st.selectbox(
         "National Park",
         park_labels_log,
         key="triplog_park_select",
     )
 
-    # Extracting necessary info for later
+    # Map label back to park dict
     idx = park_labels_log.index(selected_label_log)
     selected_park = parks[idx]
     log_park_name = selected_park["name"]
     log_park_id = selected_park["park_id"]
 
-    log_start_date = st.date_input("Planned Travel Start Date", value=date.today(),)
-    log_end_date = st.date_input("Planned Travel End Date", value=date.today(),)
+    # Dates + notes
+    log_start_date = st.date_input(
+        "Planned Travel Start Date",
+        value=date.today(),
+    )
+    log_end_date = st.date_input(
+        "Planned Travel End Date",
+        value=date.today(),
+    )
     log_notes = st.text_area("Short notes about your trip", key="log_notes")
 
-    # If this button is pushed by the user, it will save the trip entry in memory and to the database with the necessary foreign keys
+    # Once this button is pressed it will create a new trip log connect to the user
     if st.button("Save Trip Entry"):
-        # The user must atleast have a park name and the dates must make sense
         if not log_park_name:
             st.error("Please provide at least a park name.")
         elif log_end_date < log_start_date:
             st.error("End date cannot be before start date.")
         else:
-            # Save to DB
             try:
-                user = st.session_state.get("user")
-                if not user:
-                    st.error("You must be logged in to save a trip log.")
+                # Give the user information, the app will then use the API to pass the information to the database
+                # to create a new trip log with the necessary information
+                resp = requests.post(
+                    f"{API_BASE}/api/triplog",
+                    json={
+                        "park_id": log_park_id,
+                        "start_date": log_start_date.isoformat(),
+                        "end_date": log_end_date.isoformat(),
+                        "notes": log_notes,
+                    },
+                    cookies={"session_id": session_id},
+                    timeout=5,
+                )
+                data = resp.json()
+                # If the request fails, it will thrown an error
+                if resp.status_code != 201:
+                    st.error(data.get("error", "Failed to save trip log."))
                 else:
-                    user_id = user["user_id"]
-
-                    con = get_connection()
-                    cur = con.cursor()
-                    cur.execute(
-                        """
-                        INSERT INTO TRIP_LOG (user_id, park_id, start_date, end_date, notes)
-                        VALUES (%s, %s, %s, %s, %s)
-                        """,
-                        (user_id, log_park_id, log_start_date, log_end_date, log_notes),
-                    )
-                    con.commit()
-                    trip_id = cur.lastrowid 
-
                     st.success("Trip log saved.")
-
-                    # In-memory log for this session
-                    st.session_state.trip_log.append(
-                        {
-                            "trip_id": trip_id,
-                            "park_name": log_park_name,
-                            "start_date": log_start_date,
-                            "end_date": log_end_date,
-                            "notes": log_notes,
-                        }
-                    )
+                    st.rerun()
             # Exception handling
             except Exception as e:
                 st.error(f"Failed to save trip log: {e}")
-            finally:
-                try:
-                    con.close()
-                except NameError:
-                    pass
 
     st.markdown("### Your trip log")
 
-    if not st.session_state.trip_log:
-        st.info("No trip log entries yet.")
+    # ---- Load trip log via API ----
+    try:
+        # This will request the database for all of the trip logs attached to a user to be displayed
+        list_resp = requests.get(
+            f"{API_BASE}/api/triplog",
+            cookies={"session_id": session_id},
+            timeout=5,
+        )
+        list_data = list_resp.json()
+    # Exception handling
+    except Exception as e:
+        list_data = {"error": str(e)}
+
+    # If the data cannot be retrieved, then an error will be thrown
+    if list_data.get("error"):
+        st.error(f"Could not load trip log: {list_data['error']}")
     else:
-        user = st.session_state.get("user")
-        user_id = user["user_id"] if user else None
+        # If there are no trip logs yet, the default will be shwon
+        triplog = list_data.get("triplog", [])
+        if not triplog:
+            st.info("No trip log entries yet.")
+        else:
+            # small helper to turn string -> date
+            def parse_date_safe(s: str | None) -> date:
+                if not s:
+                    return date.today()
+                try:
+                    # handle "2024-12-01" or "2024-12-01T00:00:00"
+                    return date.fromisoformat(str(s)[:10])
+                except Exception:
+                    return date.today()
 
-        # each trip log has its own container for its entry, so it can be updated by the user later if necessary
-        for i, entry in enumerate(st.session_state.trip_log, start=1):
-            with st.container(border=True):
-                # Displays trip log data
-                st.markdown(f"**{i}. {entry['park_name']}**")
-                st.write(f"{entry['start_date']} → {entry['end_date']}")
+            # For each entry in triplog will have its own container - this will be helpful if the user updates the information
+            for i, entry in enumerate(triplog, start=1):
+                with st.container(border=True):
+                    st.markdown(f"**{i}. {entry['park_name']}**")
 
-                # Editable notes field for later revision
-                new_notes = st.text_area(
-                    "Edit notes",
-                    value=entry.get("notes", "") or "",
-                    key=f"edit_notes_{entry['trip_id']}",
-                )
+                    current_start = parse_date_safe(entry.get("start_date"))
+                    current_end = parse_date_safe(entry.get("end_date"))
 
-                # If an edit is made and this button is pushed, it will update the entry in the database
-                if st.button(
-                    "Save changes",
-                    key=f"save_trip_{entry['trip_id']}",
-                ):
-                    if not user_id:
-                        st.error("You must be logged in to update trip logs.")
-                    else:
-                        try:
-                            con = get_connection()
-                            cur = con.cursor()
-                            cur.execute(
-                                """
-                                UPDATE TRIP_LOG
-                                SET notes = %s
-                                WHERE trip_id = %s AND user_id = %s
-                                """,
-                                (new_notes, entry["trip_id"], user_id),
-                            )
-                            con.commit()
-                            st.success("Trip log updated.")
+                    # Retrieves the updated information
+                    new_start = st.date_input(
+                        "Start date",
+                        value=current_start,
+                        key=f"trip_start_{entry['trip_id']}",
+                    )
+                    new_end = st.date_input(
+                        "End date",
+                        value=current_end,
+                        key=f"trip_end_{entry['trip_id']}",
+                    )
 
-                            # Update local copy too
-                            entry["notes"] = new_notes
-                            # Reloads the page so the changes are reflected
-                            st.rerun()
+                    new_notes = st.text_area(
+                        "Notes",
+                        value=entry.get("notes", "") or "",
+                        key=f"trip_notes_{entry['trip_id']}",
+                    )
 
-                        # Error handling
-                        except Exception as e:
-                            st.error(f"Failed to update trip log: {e}")
-                        finally:
+                    # If the button is clicked, then it will send a put request to update the information in the database
+                    if st.button(
+                        "Save changes",
+                        key=f"save_trip_{entry['trip_id']}",
+                    ):
+                        # Error handling to make sure the dates make sense
+                        if new_end < new_start:
+                            st.error("End date cannot be before start date.")
+                        else:
                             try:
-                                con.close()
-                            except NameError:
-                                pass
+                                # This will sent a put request to UPDATE the information in the db
+                                resp = requests.put(
+                                    f"{API_BASE}/api/triplog/{entry['trip_id']}",
+                                    json={
+                                        "start_date": new_start.isoformat(),
+                                        "end_date": new_end.isoformat(),
+                                        "notes": new_notes,
+                                    },
+                                    cookies={"session_id": session_id},
+                                    timeout=5,
+                                )
+                                data = resp.json()
+                                # If it fails to update, an error will be thrown for debugging
+                                if resp.status_code != 200:
+                                    st.error(
+                                        data.get(
+                                            "error",
+                                            "Failed to update trip log.",
+                                        )
+                                    )
+                                else:
+                                    st.success("Trip log updated.")
+                                    # If it is a success, then the page will reload to show the updated info
+                                    st.rerun()
+                            # Exception handling
+                            except Exception as e:
+                                st.error(f"Error updating trip log: {e}")
 
 # ---------------- Wishlist tab ----------------
 with tab_wishlist:
     st.subheader("Add a wishlist trip")
+
+    user = st.session_state.get("user")
+    if not user:
+        st.warning("Please log in to manage your wishlist.")
+        st.stop()
+
+    session_id = str(user["session_id"])
 
     # Load parks and build labels - keeping user choice within available parks
     parks = get_parks()
@@ -191,121 +235,108 @@ with tab_wishlist:
     # Given its own key to prevent run time errors of key duplication
     wish_notes = st.text_area("Short notes or plans", key="wish_notes")
 
-    # If this button is pressed, it will save the current Wishlist trip to the session memory and the database
+    # If this button is pressed, it will save the current Wishlist trip to the database
     if st.button("Save Wishlist Trip"):
         # Must provide a name
         if not wish_park_name:
             st.error("Please provide a park name.")
         else:
-            # Wishlist trip saved to DB
+            # Wishlist trip saved to DB through API
             try:
-                user = st.session_state.get("user")
-                if not user:
-                    st.error("You must be logged in to save wishlist trips.")
+                resp = requests.post(
+                    f"{API_BASE}/api/wishlist",
+                    json={
+                        "park_id": wish_park_id,
+                        "target_season": wish_season,
+                        "notes": wish_notes,
+                    },
+                    cookies={"session_id": session_id},
+                    timeout=5,
+                )
+                data = resp.json()
+                if resp.status_code != 201:
+                    st.error(data.get("error", "Failed to save wishlist trip."))
                 else:
-                    user_id = user["user_id"]
-
-                    con = get_connection()
-                    cur = con.cursor()
-                    cur.execute(
-                        """
-                        INSERT INTO WISHLIST_TRIP (user_id, park_id, target_season, notes)
-                        VALUES (%s, %s, %s, %s)
-                        """,
-                        (user_id, wish_park_id, wish_season, wish_notes),
-                    )
-                    con.commit()
-                    wishlist_id = cur.lastrowid
-
                     st.success("Wishlist trip saved.")
-
-                    # Keep an in-memory copy for this session
-                    st.session_state.wishlist_trips.append(
-                        {
-                            "wishlist_id": wishlist_id,
-                            "park_id": wish_park_id,
-                            "park_name": wish_park_name,
-                            "target_season": wish_season,
-                            "notes": wish_notes,
-                        }
-                    )
-            # Exception handling
+                    # reload list below
+                    st.rerun()
             except Exception as e:
                 st.error(f"Failed to save wishlist trip: {e}")
-            finally:
-                try:
-                    con.close()
-                except NameError:
-                    pass
 
     st.markdown("### Your wishlist trips")
 
-    # If there are no wishlist trips for the user, then the default will be displayed
-    if not st.session_state.wishlist_trips:
-        st.info("No wishlist trips yet.")
+    # ---- Load wishlist via API ----
+    try:
+        # Tries to get all of the wishlist trips attached to a user
+        list_resp = requests.get(
+            f"{API_BASE}/api/wishlist",
+            cookies={"session_id": session_id},
+            timeout=5,
+        )
+        list_data = list_resp.json()
+    # Exception Handling
+    except Exception as e:
+        list_data = {"error": str(e)}
+
+    if list_data.get("error"):
+        st.error(f"Could not load wishlist: {list_data['error']}")
     else:
-        user = st.session_state.get("user")
-        user_id = user["user_id"] if user else None
+        wishlist = list_data.get("wishlist", [])
+        if not wishlist:
+            # If there are no wishlist trips for the user, then the default will be displayed
+            st.info("No wishlist trips yet.")
+        else:
+            seasons = ["Spring", "Summer", "Fall", "Winter"]
 
-        # Each Wishlist trip is saved in its own container for later edits and display
-        for i, wish in enumerate(st.session_state.wishlist_trips, start=1):
-            with st.container(border=True):
-                st.markdown(f"**{i}. {wish['park_name']}**")
+            for i, wish in enumerate(wishlist, start=1):
+                with st.container(border=True):
+                    st.markdown(f"**{i}. {wish['park_name']}**")
 
-                # Editable season - this allows the user to modify previosly made Wishlist trips
-                new_season = st.selectbox(
-                    "Season",
-                    ["Spring", "Summer", "Fall", "Winter"],
-                    index=["Spring", "Summer", "Fall", "Winter"].index(
-                        wish.get("target_season", "Spring")
-                    ),
-                    #As each entry for wishlist trips is associated to a entry in the array, we can call its index to access it
-                    key=f"edit_wish_season_{wish['wishlist_id']}",
-                )
+                    # Editable season selectbox
+                    current_season = wish.get("target_season", "Spring")
+                    if current_season not in seasons:
+                        current_season = "Spring"
 
-                # Editable notes
-                new_notes = st.text_area(
-                    "Notes",
-                    value=wish.get("notes", "") or "",
-                    key=f"edit_wish_notes_{wish['wishlist_id']}",
-                )
+                    new_season = st.selectbox(
+                        "Season",
+                        seasons,
+                        index=seasons.index(current_season),
+                        key=f"edit_wish_season_{wish['wishlist_id']}",
+                    )
 
-                # This button will save any changes the user made to the entry and update it in the database
-                if st.button(
-                    "Save changes",
-                    key=f"save_wish_{wish['wishlist_id']}",
-                ):
-                    if not user_id:
-                        st.error("You must be logged in to update wishlist trips.")
-                    else:
+                    # Editable notes
+                    new_notes = st.text_area(
+                        "Notes",
+                        value=wish.get("notes", "") or "",
+                        key=f"edit_wish_notes_{wish['wishlist_id']}",
+                    )
+
+                    if st.button(
+                        "Save changes",
+                        key=f"save_wish_{wish['wishlist_id']}",
+                    ):
                         try:
-                            con = get_connection()
-                            cur = con.cursor()
-                            cur.execute(
-                                """
-                                UPDATE WISHLIST_TRIP
-                                SET target_season = %s, notes = %s
-                                WHERE wishlist_id = %s AND user_id = %s
-                                """,
-                                (
-                                    new_season,
-                                    new_notes,
-                                    wish["wishlist_id"],
-                                    user_id,
-                                ),
+                            resp = requests.put(
+                                f"{API_BASE}/api/wishlist/{wish['wishlist_id']}",
+                                json={
+                                    "target_season": new_season,
+                                    "notes": new_notes,
+                                },
+                                cookies={"session_id": session_id},
+                                timeout=5,
                             )
-                            con.commit()
-                            st.success("Wishlist trip updated.")
 
-                            # Update local copy too
-                            wish["target_season"] = new_season
-                            wish["notes"] = new_notes
-                            st.rerun()
-                        # Exception handling
+                            data = resp.json()
+
+                            if resp.status_code != 200:
+                                st.error(
+                                    data.get(
+                                        "error", "Failed to update wishlist trip"
+                                    )
+                                )
+                            else:
+                                st.success("Wishlist trip updated.")
+                                st.rerun()
+
                         except Exception as e:
-                            st.error(f"Failed to update wishlist trip: {e}")
-                        finally:
-                            try:
-                                con.close()
-                            except NameError:
-                                pass
+                            st.error(f"Error updating wishlist trip: {e}")
