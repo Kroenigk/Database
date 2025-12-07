@@ -112,9 +112,6 @@ def add_to_favorites(park_id: str):
     except Exception as e:
         st.error(f"Error contacting backend: {e}")
 
-def make_reservation(park_id: str):
-    st.info(f"[placeholder] Reservation flow for park {park_id}.")
-
 
 def make_park_tag(park_id: str):
     st.info(f"[placeholder] Tag flow for park {park_id}.")
@@ -123,14 +120,11 @@ def make_park_tag(park_id: str):
 # This function will display all the information of a given park on the main Park Explorer page
 def render_park_detail(park_id: str):
     # These buttons allow the user to add a park to their favorites, add a park tag, and make a reservation to the park
-    col1Button, col2Button, col3Button = st.columns([3,1,1])
+    col1Button, col2Button = st.columns([3,1])
     with col1Button:
         if st.button("Add to Favorites"):
             add_to_favorites(park_id)
     with col2Button:
-        if st.button("Make a Reservation"):
-            make_reservation(park_id)
-    with col3Button:
         if st.button("Add Park Tag"):
             add_park_tag(park_id)
 
@@ -175,41 +169,6 @@ def render_park_detail(park_id: str):
             st.write(", ".join(detail["amenities"]))
         else:
             st.write("No amenities listed.")
-
-    # Campgrounds - this is in a table format
-    st.subheader("Campgrounds")
-    if detail["campgrounds"]:
-        cg_rows = []
-        for cg_id, name, desc, lat, lon in detail["campgrounds"]:
-            cg_rows.append(
-                {
-                    "Name": name,
-                    "Description": (desc[:120] + "…") if desc and len(desc) > 120 else desc,
-                    "Lat": lat,
-                    "Lon": lon,
-                    "ID": cg_id,
-                }
-            )
-        st.dataframe(cg_rows, hide_index=True)
-    else:
-        st.write("No campgrounds found for this park.")
-
-    # Trails - this is in a table format
-    st.subheader("Trails")
-    if detail["trails"]:
-        trail_rows = []
-        for trail_id, name, length, diff in detail["trails"]:
-            trail_rows.append(
-                {
-                    "Name": name,
-                    "Length (miles)": length,
-                    "Difficulty": diff,
-                    "ID": trail_id,
-                }
-            )
-        st.dataframe(trail_rows, hide_index=True)
-    else:
-        st.write("No trails found for this park.")
 
     # Alerts - this has a expanded if the user desires more information
     st.subheader("Current Alerts")

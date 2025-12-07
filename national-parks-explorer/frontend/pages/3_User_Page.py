@@ -1,8 +1,7 @@
-# frontend/pages/3_user_page.py
-
 import os
 import requests
 import streamlit as st
+from frontend.park_data import get_parks
 
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 
@@ -113,9 +112,120 @@ with tab_favorites:
 
 # ---------------- Reviews tab ----------------
 with tab_reviews:
-    # This will contain all of the user's reviews
     st.subheader("My Reviews")
-    st.info(
-        "This section will list your park and trail reviews once backend "
-        "endpoints for per-user reviews are in place."
-    )
+
+    user = st.session_state.get("user")
+    if not user:
+        st.warning("You must be logged in to view or submit reviews.")
+        st.stop()
+
+    session_id = str(user.get("session_id", ""))
+
+    def load_user_reviews():
+        """Fetch current user's reviews from the backend and render them."""
+        try:
+            resp = requests.get(
+                f"{API_BASE}/api/users/me/reviews",  # no extra /api
+                cookies={"session_id": session_id},
+                timeout=5,
+            )
+        except Exception as e:
+            st.error(f"Error contacting backend: {e}")
+            return
+
+        if resp.status_code != 200:
+            st.info("Could not load your reviews.")
+            return
+
+        data = resp.json()
+        reviews = data.get("reviews", [])
+
+        if not reviews:
+            st.info("You haven't submitted any reviews yet.")
+            return
+
+        for r in reviews:
+            # adjust keys based on your backend shape
+            st.write(f"**Park:** {r.get('park_name', 'Unknown park')}")
+            st.write(f"**Rating:** {r['rating']} / 5")
+            st.write(f"**Review:** {r['review_text']}")
+            if r.get("created_at"):
+                st.write(f"**Date:** {r['created_at']}")
+            st.markdown("---")
+
+    def make_review():
+        st.subheader("Write a New Review")
+
+        # --- Require login & get session_id ---
+        user = st.session_state.get("user")
+        if not user:
+            st.warning("Please log in to write a review.")
+            return
+        session_id = str(user["session_id"])
+
+        # --- Get parks ---
+        parks = get_parks()
+        if not parks:
+            st.info("No parks available to review.")
+            return
+        # Build labels and add a "(none)" option
+        park_names = ["(none)"] + [f"{p['name']} ({p['park_id']})" for p in parks]
+
+        choice = st.selectbox(
+            "Select a National Park to Review",
+            park_names,
+            key="review_park_select",
+        )
+
+        if choice == "(none)":
+            st.info("Please select a park to review.")
+            return
+
+        # Map back from label to the chosen park
+        idx = park_names.index(choice) - 1 
+        selected_park = parks[idx]
+        review_park_name = selected_park["name"]
+        review_park_id = selected_park["park_id"]
+        st.write(f"Reviewing: **{review_park_name}**")
+
+        # --- Review inputs ---
+        rating = st.slider("Rating (1–5)", 1, 5, 3)
+        review_text = st.text_area("Review Text")
+
+        # --- Submit review ---
+        if st.button("Submit Review"):
+            if not review_text.strip():
+                st.error("Review text cannot be empty.")
+                return
+        try:
+            resp = requests.post(
+                f"{API_BASE}/api/parks/{review_park_id}/reviews",
+                json={
+                    "rating": rating,
+                    "review_text": review_text,
+                },
+                cookies={"session_id": session_id},
+                timeout=5,
+            )
+        except Exception as e:
+            st.error(f"Error contacting backend: {e}")
+            return
+
+        # Handle response
+        try:
+            data = resp.json()
+        except Exception:
+            st.error("Backend returned a non-JSON response.")
+            return
+
+        if resp.status_code != 201:
+            st.error(data.get("error", "Failed to submit review."))
+        else:
+            st.success("Review submitted successfully!")
+            st.toast("Review submitted ✅")
+            load_user_reviews()
+
+    # Render both sections
+    load_user_reviews()
+    st.markdown("---")
+    make_review()

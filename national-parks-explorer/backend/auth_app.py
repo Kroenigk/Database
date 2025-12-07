@@ -3,6 +3,7 @@ from flask_cors import CORS
 from passlib.hash import pbkdf2_sha256
 from datetime import datetime
 from functools import wraps
+from datetime import date
 
 from backend.db import get_connection
 from backend.config import FLASK_SECRET_KEY
@@ -293,17 +294,27 @@ def list_favorites():
     ]
     return jsonify({"favorites": favorites})
 
-# This will add a review to a specific park
+# This will create a review for a specific park
 @app.post("/api/parks/<park_id>/reviews")
 @login_required
 def create_park_review(park_id):
     user = g.user
-    data = request.get_json(force=True)
-    rating = data.get("rating")
-    review_text = data.get("review_text")
+    data = request.get_json(force=True) or {}
 
-    if rating is None or not (1 <= int(rating) <= 5):
+    rating = data.get("rating")
+    review_text = data.get("review_text", "").strip()
+
+    # Validate rating
+    try:
+        rating_int = int(rating)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Rating must be an integer between 1 and 5"}), 400
+
+    if not (1 <= rating_int <= 5):
         return jsonify({"error": "Rating must be between 1 and 5"}), 400
+
+    if not review_text:
+        return jsonify({"error": "Review text cannot be empty."}), 400
 
     db = get_db()
     cur = db.cursor()
@@ -313,45 +324,56 @@ def create_park_review(park_id):
         INSERT INTO PARK_REVIEW (user_id, park_id, rating, review_text, created_at)
         VALUES (%s, %s, %s, %s, NOW())
         """,
-        (user["user_id"], park_id, int(rating), review_text),
+        (user["user_id"], park_id, rating_int, review_text),
     )
     db.commit()
 
-    log_activity(user["session_id"], user["user_id"], f"CREATE_PARK_REVIEW park_id={park_id}")
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"CREATE_PARK_REVIEW park_id={park_id}",
+    )
 
     return jsonify({"message": "Review created"}), 201
 
-# This will return all of the reviews attached to a specific park id
-@app.get("/api/parks/<park_id>/reviews")
+# This will return all of the reviews attached to a specific user
+@app.get("/api/users/me/reviews")
 @login_required
-def list_park_reviews(park_id):
+def list_user_reviews():
+    user = g.user
     db = get_db()
     cur = db.cursor()
     cur.execute(
         """
-        SELECT r.review_id, r.rating, r.review_text, r.created_at, u.username
+        SELECT r.review_id,
+               r.rating,
+               r.review_text,
+               r.created_at,
+               r.park_id,
+               p.name AS park_name
         FROM PARK_REVIEW r
-        JOIN APP_USER u ON u.user_id = r.user_id
-        WHERE r.park_id = %s
+        JOIN PARK p ON p.park_id = r.park_id
+        WHERE r.user_id = %s
         ORDER BY r.created_at DESC
         """,
-        (park_id,),
+        (user["user_id"],),
     )
     rows = cur.fetchall()
 
     reviews = []
-    for review_id, rating, text, created_at, username in rows:
+    for review_id, rating, text, created_at, park_id, park_name in rows:
         reviews.append(
             {
                 "review_id": review_id,
+                "park_id": park_id,
+                "park_name": park_name,
                 "rating": rating,
                 "review_text": text,
                 "created_at": created_at.isoformat() if created_at else None,
-                "username": username,
             }
         )
-    return jsonify({"reviews": reviews})
 
+    return jsonify({"reviews": reviews})
 
 # ----- Trip Log  Routes ----
 @app.get("/api/triplog")
@@ -613,6 +635,288 @@ def update_wishlist_trip(wishlist_id):
             },
         }
     )
+# Campgrounds Page
+@app.get("/api/campgrounds")
+@login_required
+def list_all_campgrounds():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        SELECT campground_id, park_id, name, latitude, longitude, description
+        FROM CAMPGROUND
+        """
+    )
+    rows = cur.fetchall()
+
+    campgrounds = []
+    for campground_id, park_id, name, latitude, longitude, description in rows:
+        campgrounds.append(
+            {
+                "campground_id": campground_id,
+                "park_id": park_id,
+                "name": name,
+                "latitude": latitude,
+                "longitude": longitude,
+                "description": description,
+            }
+        )
+    # Added to activity log
+    user = g.user
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"LIST_ALL_CAMPGROUNDS",
+    )
+
+    return jsonify({"campgrounds": campgrounds})
+
+@app.get("/api/parks/<int:park_id>/campgrounds")
+@login_required
+def list_campgrounds(park_id):
+    user = g.user
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        SELECT campground_id, name, latitude, longitude, description
+        FROM CAMPGROUND
+        WHERE park_id = %s
+        """,
+        (park_id,),
+    )
+    rows = cur.fetchall()
+
+    campgrounds = []
+    for campground_id, name, latitude, longitude, description in rows:
+        campgrounds.append(
+            {
+                "campground_id": campground_id,
+                "name": name,
+                "latitude": latitude,
+                "longitude": longitude,
+                "description": description,
+            }
+        )
+    # Log activity to activity log
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"LIST_CAMPGROUNDS park_id={park_id}",
+    )
+
+    return jsonify({"campgrounds": campgrounds})
+
+@app.get("/api/campgrounds/reservations")
+@login_required
+def list_campground_reservations():
+    user = g.user
+    user_id = user["user_id"]
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        SELECT r.reservation_id,
+               r.start_date,
+               r.end_date,
+               r.status,
+               r.created_at,
+               c.name AS campground_name,
+               p.name AS park_name
+        FROM RESERVATION r
+        JOIN CAMPGROUND c ON c.campground_id = r.campground_id
+        JOIN PARK p ON p.park_id = c.park_id
+        WHERE r.user_id = %s
+        ORDER BY r.start_date DESC, r.created_at DESC
+        """,
+        (user_id,),
+    )
+    rows = cur.fetchall()
+
+    reservations = []
+    for reservation_id, start_date, end_date, status, campground_name, park_name in rows:
+        reservations.append(
+            {
+                "reservation_id": reservation_id,
+                "campground_name": campground_name,
+                "park_name": park_name,
+                "start_date": start_date.isoformat() if start_date else None,
+                "end_date": end_date.isoformat() if end_date else None,
+                "status": status,
+            }
+        )
+    # Log to activity log
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"LIST_CAMP_RESERVATIONS user_id={user_id}",
+    )
+
+    return jsonify({"reservations": reservations})
+
+@app.post("/api/campgrounds/reservations")
+@login_required
+def create_campground_reservation():
+    user = g.user
+    user_id = user["user_id"]
+
+    data = request.get_json(force=True) or {}
+    campground_id = data.get("campground_id")
+    start_date_str = data.get("start_date")
+    end_date_str = data.get("end_date")
+    status = data.get("status", "PENDING")
+
+    # Data validation
+    if not campground_id or not start_date_str or not end_date_str:
+        return jsonify({"error": "campground_id, start_date, and end_date are required."}), 400
+
+    try:
+        start_date = date.fromisoformat(start_date_str)
+        end_date = date.fromisoformat(end_date_str)
+    except ValueError:
+        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+    if end_date < start_date:
+        return jsonify({"error": "end_date must be on or after start_date."}), 400
+
+    db = get_db()
+    cur = db.cursor()
+
+    # Insert reservation
+    cur.execute(
+        """
+        INSERT INTO RESERVATION (user_id, campground_id, start_date, end_date, status)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (user_id, campground_id, start_date, end_date, status),
+    )
+    db.commit()
+
+    reservation_id = cur.lastrowid
+
+    # Activity log
+    log_activity(
+        user["session_id"],
+        user_id,
+        f"CREATE_RESERVATION reservation_id={reservation_id} campground_id={campground_id}",
+    )
+
+    return ( jsonify({"message": "Reservation created"}), 201, )
+
+# Trails Page
+@app.get("/api/parks/<park_id>/trails")
+@login_required
+def list_trails(park_id):
+    user = g.user
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        SELECT trail_id, name, length_miles, difficulty
+        FROM TRAIL
+        WHERE park_id = %s
+        """,
+        (park_id,),
+    )
+    rows = cur.fetchall()
+
+    trails = []
+    for trail_id, name, length_miles, difficulty in rows:
+        trails.append(
+            {
+                "trail_id": trail_id,
+                "name": name,
+                "length_miles": length_miles,
+                "difficulty": difficulty,
+            }
+        )
+    # Log activity to activity log
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"LIST_TRAILS park_id={park_id}",
+    )
+
+    # wrapped so frontend uses response.json()["trails"]
+    return jsonify({"trails": trails})
+
+@app.post("/api/trails/<int:trail_id>/reviews")
+@login_required
+def add_trail_review(trail_id):
+    user = g.user
+    data = request.get_json(force=True)
+
+    rating = data.get("rating")
+    review_text = data.get("review_text")
+
+    if rating is None or not (1 <= int(rating) <= 5):
+        return jsonify({"error": "Rating must be between 1 and 5"}), 400
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        INSERT INTO TRAIL_REVIEW (trail_id, user_id, rating, review_text, created_at)
+        VALUES (%s, %s, %s, %s, NOW())
+        """,
+        (trail_id, user["user_id"], int(rating), review_text),
+    )
+    db.commit()
+
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"CREATE_TRAIL_REVIEW trail_id={trail_id}",
+    )
+
+    return ( jsonify({"message": "Trail review created"}), 201, )
+
+
+@app.get("/api/trails/reviews")
+@login_required
+def list_trail_reviews():
+    user = g.user
+    user_id = user["user_id"]
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        SELECT r.review_id,
+               r.rating,
+               r.review_text,
+               r.trail_id,
+               r.created_at
+        FROM TRAIL_REVIEW r
+        WHERE r.user_id = %s
+        ORDER BY r.created_at DESC
+        """,
+        (user_id,),
+    )
+    rows = cur.fetchall()
+
+    reviews = []
+    for review_id, rating, review_text, trail_id, created_at in rows:
+        reviews.append(
+            {
+                "review_id": review_id,
+                "trail_id": trail_id,
+                "user_id": user_id,
+                "rating": rating,
+                "review_text": review_text,
+                "created_at": created_at.isoformat() if created_at else None,
+            }
+        )
+    # Log to activity log
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"LIST_TRAIL_REVIEWS user_id={user_id}",
+    )
+
+    return jsonify({"reviews": reviews})
+
 
 if __name__ == "__main__":
     # For local dev

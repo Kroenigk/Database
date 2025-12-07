@@ -72,3 +72,19 @@ $BROWSER http://localhost:8501
 - Data ingestion for parks and activities
 - Streamlit pages: search, park details, activities filter, login
 - Basic auth with sessions
+
+## Data Sources
+This project uses publicly available U.S. federal datasets and APIs:
+
+- Recreation Information Database (RIDB), U.S. General Services Administration, 
+    https://ridb.recreation.gov/
+
+- National Park Service (NPS) Developer API, 
+    https://www.nps.gov/subjects/developer/index.htm
+
+- U.S. Geological Survey (USGS) Open Data,  
+    https://earthquake.usgs.gov/fdsnws/event/1/query
+
+- National Oceanic and Atmospheric Administration, NOAA Climate and Environmental Data, 
+    https://www.ncdc.noaa.gov/cdo-web/api/v2/
+
