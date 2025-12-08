@@ -917,6 +917,104 @@ def list_trail_reviews():
 
     return jsonify({"reviews": reviews})
 
+# Tags endpoint
+@app.get("/api/parks")
+@login_required
+def list_parks():
+    #Returns parks that have the specified tag.
+    #If no tag is provided, returns all parks.
+
+    tag_label = request.args.get("tag")
+
+    db = get_db()
+    cur = db.cursor()
+
+    # If no tag -> return all parks
+    if not tag_label:
+        cur.execute(
+            """
+            SELECT park_id, name
+            FROM PARK
+            ORDER BY name
+            """
+        )
+        rows = cur.fetchall()
+
+        parks = [{"park_id": r[0], "name": r[1]} for r in rows]
+        return jsonify({"parks": parks})
+
+    # If tag provided -> join TAG + PARK_TAG + PARK
+    cur.execute(
+        """
+        SELECT p.park_id, p.name
+        FROM PARK p
+        JOIN PARK_TAG pt ON p.park_id = pt.park_id
+        JOIN TAG t       ON pt.tag_id = t.tag_id
+        WHERE t.label = %s
+        ORDER BY p.name
+        """,
+        (tag_label,),
+    )
+    rows = cur.fetchall()
+
+    parks = [{"park_id": r[0], "name": r[1]} for r in rows]
+
+    # Activity log
+    user = g.user
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"VIEW_PARKS_BY_TAG {tag_label}",
+    )
+
+    return jsonify({"parks": parks})
+
+#Popularity endpoint
+@app.get("/api/parks/popular")
+@login_required
+def list_popular_parks():
+    #Return parks ordered by popularity.
+    db = get_db()
+    cur = db.cursor()
+
+    sql = """
+        SELECT
+            p.park_id,
+            p.name,
+            pp.favorites_count,
+            pp.visit_count,
+            pp.review_count,
+            pp.avg_rating
+        FROM PARK p
+        JOIN PARK_POPULARITY pp ON p.park_id = pp.park_id
+        ORDER BY pp.favorites_count DESC, p.name ASC
+    """
+    params: list = []
+
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+
+    parks = [
+        {
+            "park_id": row[0],
+            "name": row[1],
+            "favorites_count": row[2],
+            "visit_count": row[3],
+            "review_count": row[4],
+            "avg_rating": row[5],
+        }
+        for row in rows
+    ]
+
+    # Activity log
+    user = g.user
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        "VIEW_POPULAR_PARKS",
+    )
+
+    return jsonify({"parks": parks})
 
 if __name__ == "__main__":
     # For local dev

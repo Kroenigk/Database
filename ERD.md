@@ -182,9 +182,8 @@ erDiagram
     DATETIME created_at
   }
 
-  USER_TAG {
+  TAG {
     INT tag_id PK
-    INT user_id FK
     VARCHAR(50) label
   }
 
@@ -285,7 +284,7 @@ erDiagram
   PARK ||--o{ PARK_REVIEW : "reviewed_in"
 
   APP_USER ||--o{ USER_TAG : "creates"
-  USER_TAG ||--o{ PARK_TAG : "applied_in"
+  TAG ||--o{ PARK_TAG : "applied_in"
   PARK ||--o{ PARK_TAG : "tagged_with"
 
   APP_USER ||--o{ WISHLIST_TRIP : "wants"

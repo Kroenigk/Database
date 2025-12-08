@@ -204,4 +204,9 @@ def get_basic_counts():
         counts[key] = row[0] if row else 0
     return counts
 
-
+def get_tags():
+    # This will get all the tags from the database
+    rows = query_all(
+        "SELECT label FROM TAG ORDER BY label"
+    )
+    return [row[0] for row in rows]
