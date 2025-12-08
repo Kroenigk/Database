@@ -344,3 +344,60 @@ def list_park_reviews(park_id):
 if __name__ == "__main__":
     # For local dev
     app.run(debug=True, port=8000)
+
+    
+
+# --------- Trail reviews ---------
+@app.post("/api/trails/<trail_id>/reviews")
+@login_required
+def create_trail_review(trail_id):
+    user = g.user
+    data = request.get_json(force=True)
+    rating = data.get("rating")
+    review_text = data.get("review_text")
+
+    if rating is None or not (1 <= int(rating) <= 5):
+        return jsonify({"error": "Rating must be between 1 and 5"}), 400
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        INSERT INTO TRAIL_REVIEW (user_id, trail_id, rating, review_text, created_at)
+        VALUES (%s, %s, %s, %s, NOW())
+        """,
+        (user["user_id"], trail_id, int(rating), review_text),
+    )
+    db.commit()
+
+    log_activity(user["session_id"], user["user_id"], f"CREATE_TRAIL_REVIEW trail_id={trail_id}")
+    return jsonify({"message": "Trail review created"}), 201
+
+
+@app.get("/api/trails/<trail_id>/reviews")
+def list_trail_reviews(trail_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        SELECT r.review_id, r.rating, r.review_text, r.created_at, u.username
+        FROM TRAIL_REVIEW r
+        JOIN APP_USER u ON u.user_id = r.user_id
+        WHERE r.trail_id = %s
+        ORDER BY r.created_at DESC
+        """,
+        (trail_id,),
+    )
+    rows = cur.fetchall()
+
+    reviews = [
+        {
+            "review_id": review_id,
+            "rating": rating,
+            "review_text": review_text,
+            "created_at": created_at.isoformat() if created_at else None,
+            "username": username,
+        }
+        for review_id, rating, review_text, created_at, username in rows
+    ]
+    return jsonify({"reviews": reviews})
