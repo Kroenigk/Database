@@ -283,7 +283,6 @@ erDiagram
   APP_USER ||--o{ PARK_REVIEW : "writes"
   PARK ||--o{ PARK_REVIEW : "reviewed_in"
 
-  APP_USER ||--o{ USER_TAG : "creates"
   TAG ||--o{ PARK_TAG : "applied_in"
   PARK ||--o{ PARK_TAG : "tagged_with"
 

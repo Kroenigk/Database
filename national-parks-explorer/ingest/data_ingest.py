@@ -71,8 +71,7 @@ PARK_TAGS: Dict[str, List[str]] = {
 
 def ingest_tags():
     # Insert global tags into TAG and connect them to parks via PARK_TAG.
-    db = get_connection()
-    conn = db.get_conn()
+    conn = get_connection()
     cur = conn.cursor()
 
     # 1. Collect all unique labels from PARK_TAGS.
@@ -119,7 +118,7 @@ def ingest_dummy_popularity():
     # Fill PARK_POPULARITY with dummy stats for all parks.
     # If a row already exists, it will be updated.
     
-
+    conn = get_connection()
     cur = conn.cursor()
 
     # Fetch all park_ids so the data aligns with real parks
