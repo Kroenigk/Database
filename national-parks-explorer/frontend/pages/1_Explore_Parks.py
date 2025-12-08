@@ -119,14 +119,11 @@ def make_park_tag(park_id: str):
 
 # This function will display all the information of a given park on the main Park Explorer page
 def render_park_detail(park_id: str):
-    # These buttons allow the user to add a park to their favorites, add a park tag, and make a reservation to the park
-    col1Button, col2Button = st.columns([3,1])
+    # These buttons allow the user to add a park to their favorites
+    col1Button = st.columns([3])[0]
     with col1Button:
         if st.button("Add to Favorites"):
             add_to_favorites(park_id)
-    with col2Button:
-        if st.button("Add Park Tag"):
-            add_park_tag(park_id)
 
     # This gets all of the necessary info related to the park so it can be displayed later
     detail = get_park_detail(park_id)
