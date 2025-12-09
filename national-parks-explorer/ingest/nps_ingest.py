@@ -166,7 +166,7 @@ def fetch_park_alerts_page(start: int):
     return resp.json().get("data", [])
 
 
-def ingest_park_alerts(max_pages: int = 10):
+def ingest_park_alerts(max_pages: int = 100):
     conn = get_connection()
     cur = conn.cursor()
 
@@ -234,7 +234,7 @@ def state_map():
         "NY": "New York","NC": "North Carolina","ND": "North Dakota","OH": "Ohio","OK": "Oklahoma",
         "OR": "Oregon","PA": "Pennsylvania","RI": "Rhode Island","SC": "South Carolina",
         "SD": "South Dakota","TN": "Tennessee","TX": "Texas","UT": "Utah","VT": "Vermont",
-        "VA": "Virginia","WA": "Washington","WV": "West Virginia","WI": "Wisconsin","WY": "Wyoming"
+        "VA": "Virginia","VI": "Virgin Islands", "WA": "Washington","WV": "West Virginia","WI": "Wisconsin","WY": "Wyoming"
     }
 
 # -------------------------
@@ -669,4 +669,4 @@ def ingest_nps_all():
     ingest_park_amenities()
     ingest_trails()
     ingest_park_alerts()
-    ingest_events()
+    # ingest_events()

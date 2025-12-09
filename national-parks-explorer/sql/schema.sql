@@ -45,13 +45,9 @@ CREATE TABLE APP_USER (
 -- User tags and park tags
 -- =========================================================
 
-CREATE TABLE USER_TAG (
+CREATE TABLE TAG (
     tag_id  INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    label   VARCHAR(50) NOT NULL,
-    CONSTRAINT fk_user_tag_user
-        FOREIGN KEY (user_id) REFERENCES APP_USER(user_id)
-        ON DELETE CASCADE
+    label   VARCHAR(50) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE PARK_TAG (
@@ -62,7 +58,7 @@ CREATE TABLE PARK_TAG (
         FOREIGN KEY (park_id) REFERENCES PARK(park_id)
         ON DELETE CASCADE,
     CONSTRAINT fk_park_tag_tag
-        FOREIGN KEY (tag_id) REFERENCES USER_TAG(tag_id)
+        FOREIGN KEY (tag_id) REFERENCES TAG(tag_id)
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

@@ -46,6 +46,7 @@ RIDB_BASE_URL=https://ridb.recreation.gov/api/v1
 USGS_BASE_URL=https://earthquake.usgs.gov/fdsnws/event/1/query
 NOAA_BASE_URL=https://www.ncdc.noaa.gov/cdo-web/api/v2
 FLASK_SECRET_KEY=YOUR_KEY
+API_BASE_URL=YOUR_HOST
 ```
 
 6) Ingest data (see [backend/ingest.py](national-parks-explorer/backend/ingest.py))
@@ -53,17 +54,12 @@ FLASK_SECRET_KEY=YOUR_KEY
 python -m ingest.ingest_all
 ```
 
-7) Create a user (see [backend/create_demo_user.py](national-parks-explorer/backend/create_demo_user.py))
-```bash
-python -m backend.create_demo_user kylie kylie@example.com MyStrongPass!
-```
-
-8) Run the backend API
+7) Run the backend API
 ```bash
 python -m backend.auth_app
 ```
 
-9) Run Streamlit app (see [frontend/app.py](national-parks-explorer/frontend/app.py))
+8) Run Streamlit app (see [frontend/app.py](national-parks-explorer/frontend/app.py))
 ```bash
 streamlit run frontend/app.py
 ```
@@ -76,3 +72,19 @@ $BROWSER http://localhost:8501
 - Data ingestion for parks and activities
 - Streamlit pages: search, park details, activities filter, login
 - Basic auth with sessions
+
+## Data Sources
+This project uses publicly available U.S. federal datasets and APIs:
+
+- Recreation Information Database (RIDB), U.S. General Services Administration, 
+    https://ridb.recreation.gov/
+
+- National Park Service (NPS) Developer API, 
+    https://www.nps.gov/subjects/developer/index.htm
+
+- U.S. Geological Survey (USGS) Open Data,  
+    https://earthquake.usgs.gov/fdsnws/event/1/query
+
+- National Oceanic and Atmospheric Administration, NOAA Climate and Environmental Data, 
+    https://www.ncdc.noaa.gov/cdo-web/api/v2/
+
