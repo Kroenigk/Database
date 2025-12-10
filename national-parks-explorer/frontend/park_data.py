@@ -1,6 +1,7 @@
 import os
 import sys
 import streamlit as st
+import requests
 
 
 # This will allow us direct connection to backend
@@ -9,6 +10,8 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 
 from backend.db import get_connection
+
+API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # This will search for one result of a query and fetches the data
 def query_one(sql, params=None):
@@ -210,12 +213,40 @@ def get_tags():
     rows = query_all("SELECT label FROM TAG ORDER BY label")
     return [label for (label,) in rows]
 
+# This function allows a user to add a park to their favorites through an API call to the backend
+def add_to_favorites(park_id: str):
+    user = st.session_state.get("user")
+    if not user:
+        st.error("You must be logged in.")
+        return
+
+    # This action is logged to the API
+    session_id = str(user["session_id"]) 
+
+    try:
+        # It tries to post the information to the database through a POST request that will be reflected to the database
+        resp = requests.post(
+            f"{API_BASE}/api/parks/{park_id}/favorite",
+            cookies={"session_id": session_id},
+            timeout=5,
+        )
+        data = resp.json()
+        if resp.status_code != 200:
+            st.error(data.get("error", "Failed to favorite park."))
+        else:
+            st.success("Added to favorites!")
+    # Exception handling
+    except Exception as e:
+        st.error(f"Error contacting backend: {e}")
+
 # This function will display all the information of a given park on the main Park Explorer page
-def render_park_detail(park_id: str):
+def render_park_detail(park_id: str, button_prefix: str = ""):
     # These buttons allow the user to add a park to their favorites
     col1Button = st.columns([3])[0]
+    button_key = f"{button_prefix}fav_{park_id}"
+
     with col1Button:
-        if st.button("Add to Favorites"):
+        if st.button("Add to Favorites", key=button_key):
             add_to_favorites(park_id)
 
     # This gets all of the necessary info related to the park so it can be displayed later

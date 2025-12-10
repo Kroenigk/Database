@@ -1,15 +1,16 @@
 # popular parks and tags page
-import streamlit as st
 import os
 import requests
+import streamlit as st
 from decimal import Decimal
+
 from park_data import (
     get_states,
     get_parks,
     get_park_detail,
     get_basic_counts,
     render_park_detail,
-    get_tags
+    get_tags,
 )
 
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
@@ -19,50 +20,55 @@ if not st.session_state.get("authenticated", False):
     st.warning("Please log in from the main page.")
     st.stop()
 
-
 # ---------------- Page Title ----------------
-# Page title and description with tabs for Popularity and Tags
 st.title("Explore Parks by Popularity and Tags")
 st.caption("Discover the most popular parks and explore them by tags.")
 
 popularity_tab, tags_tab = st.tabs(["Popularity", "Tags"])
 
-# ---------------- Popularity Tab ----------------
+# ================================================================
+# Popularity Tab
+# ================================================================
 with popularity_tab:
-    # This section fetches and displays the most popular parks based on various metrics
     st.header("Most Popular Parks")
 
+    user = st.session_state.get("user")
+    if not user:
+        st.error("No user session found. Please log in again.")
+        st.stop()
+    session_id = str(user["session_id"])
+
+    # ---------- Details panel at top ----------
+    popular_selected_id = st.session_state.get("popular_selected_park_id")
+    if popular_selected_id:
+        st.subheader("Selected Park Details")
+        render_park_detail(popular_selected_id, button_prefix="popular_")
+        st.markdown("---")
+
+    # ---------- Fetch popularity data ----------
     popular_parks = []
     error_message = None
 
-    # get user session info for API requests
-    user = st.session_state.get("user")
-    session_id = str(user["session_id"])
-    
-
-    # gets park popularity data from the backend API
     try:
         resp = requests.get(
             f"{API_BASE}/api/parks/popular",
             cookies={"session_id": session_id},
             timeout=10,
         )
-        # if successful, parse the data
         if resp.status_code == 200:
             data = resp.json()
             popular_parks = data.get("parks", [])
         else:
             error_message = f"API error: {resp.status_code}"
-    # except request exceptions
     except requests.RequestException as exc:
         error_message = f"Request failed: {exc}"
 
+    # ---------- Render list ----------
     if error_message:
         st.error(error_message)
     elif not popular_parks:
         st.info("No popularity data available yet.")
     else:
-        # display each popular park with its metrics
         for park in popular_parks:
             with st.container():
                 st.subheader(park["name"])
@@ -76,32 +82,37 @@ with popularity_tab:
                     park["avg_rating"] if park["avg_rating"] is not None else "N/A",
                 )
 
-                if st.button("View Park Details", key=f"view_{park['park_id']}"):
-                    st.session_state["selected_park_id"] = park["park_id"]
-                    render_park_detail(park["park_id"])
+                if st.button(
+                    "View Park Details",
+                    key=f"view_pop_{park['park_id']}",
+                ):
+                    st.session_state["popular_selected_park_id"] = park["park_id"]
+                    # force re-render so details update immediately
+                    st.rerun()
 
-# ---------------- Tags Tab ----------------
+# ================================================================
+# Tags Tab
+# ================================================================
 with tags_tab:
-    # This section allows users to explore parks based on tags attached to them
     st.header("Explore Parks by Tags")
 
-    # Fetch available tags from the backend
+    # ---------- Fetch tags ----------
     tags = get_tags()
-
     if not tags:
         st.info("No tags found in the database.")
         st.stop()
 
     selected_tag = st.selectbox("Select a Tag", tags)
 
-    # get user session info for API requests
     user = st.session_state.get("user")
+    if not user:
+        st.error("No user session found. Please log in again.")
+        st.stop()
     session_id = str(user["session_id"])
 
     tagged_parks = []
     error_message = None
 
-    # --- API request ---
     if selected_tag:
         try:
             resp = requests.get(
@@ -115,22 +126,24 @@ with tags_tab:
                 tagged_parks = data.get("parks", [])
             else:
                 error_message = f"API error: {resp.status_code}"
-        # except request exceptions
         except requests.RequestException as exc:
             error_message = f"Request failed: {exc}"
 
-    # --- UI Rendering ---
+    # ---------- Details panel at top ----------
+    tags_selected_id = st.session_state.get("tags_selected_park_id")
+    if tags_selected_id:
+        st.subheader("Selected Park Details")
+        render_park_detail(tags_selected_id, button_prefix="tags_")
+        st.markdown("---")
+
+    # ---------- Render list ----------
     if error_message:
         st.error(error_message)
-
-    # no parks found for the selected tag
     elif not tagged_parks:
         st.warning(f"No parks found with tag '{selected_tag}'.")
-
     else:
         st.subheader(f"Parks tagged with '{selected_tag}':")
 
-        # display each tagged park
         for park in tagged_parks:
             park_id = park.get("park_id")
             park_name = park.get("name", "Unknown park")
@@ -139,6 +152,5 @@ with tags_tab:
                 col1, col2 = st.columns([3, 1])
                 col1.write(f"• {park_name}")
                 if col2.button("View", key=f"view_tag_{park_id}"):
-                    st.session_state["selected_park_id"] = park_id
-                    # Allows user to view park details
-                    render_park_detail(park_id)
+                    st.session_state["tags_selected_park_id"] = park_id
+                    st.rerun()
