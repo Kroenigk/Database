@@ -112,8 +112,10 @@ with tab_favorites:
 
 # ---------------- Reviews tab ----------------
 with tab_reviews:
+    # This section allows a user to view and submit reviews for parks
     st.subheader("My Reviews")
 
+    # --- Require login ---
     user = st.session_state.get("user")
     if not user:
         st.warning("You must be logged in to view or submit reviews.")
@@ -121,11 +123,12 @@ with tab_reviews:
 
     session_id = str(user.get("session_id", ""))
 
+    # Function to load and display user reviews
     def load_user_reviews():
-        """Fetch current user's reviews from the backend and render them."""
+        #Fetches current user's reviews from the backend and renders them.
         try:
             resp = requests.get(
-                f"{API_BASE}/api/users/me/reviews",  # no extra /api
+                f"{API_BASE}/api/users/me/reviews",
                 cookies={"session_id": session_id},
                 timeout=5,
             )
@@ -138,12 +141,14 @@ with tab_reviews:
             return
 
         data = resp.json()
+        # All of the reviews that are attached to the user will be placed in reviews to be displayed
         reviews = data.get("reviews", [])
 
         if not reviews:
             st.info("You haven't submitted any reviews yet.")
             return
 
+        # Displays each review in its own section so that it is easy to read and functionality for updating can be implemented later
         for r in reviews:
             # adjust keys based on your backend shape
             st.write(f"**Park:** {r.get('park_name', 'Unknown park')}")
@@ -153,6 +158,7 @@ with tab_reviews:
                 st.write(f"**Date:** {r['created_at']}")
             st.markdown("---")
 
+    # Function to create and submit a new review
     def make_review():
         st.subheader("Write a New Review")
 
@@ -171,12 +177,14 @@ with tab_reviews:
         # Build labels and add a "(none)" option
         park_names = ["(none)"] + [f"{p['name']} ({p['park_id']})" for p in parks]
 
+        # This is a drop down that allows a user to select a particular park to review
         choice = st.selectbox(
             "Select a National Park to Review",
             park_names,
             key="review_park_select",
         )
 
+        # If no park is selected, inform the user to select one - this is the default option
         if choice == "(none)":
             st.info("Please select a park to review.")
             return
@@ -192,7 +200,7 @@ with tab_reviews:
         rating = st.slider("Rating (1–5)", 1, 5, 3)
         review_text = st.text_area("Review Text")
 
-        # --- Submit review ---
+        # --- Submit review by calling API ---
         if st.button("Submit Review"):
             if not review_text.strip():
                 st.error("Review text cannot be empty.")

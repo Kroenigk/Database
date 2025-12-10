@@ -1,5 +1,5 @@
 from .nps_ingest import ingest_nps_all
-from .ridb_ingest import ingest_ridb_all
+from .ri_ingest import ingest_ridb_all
 from .usgs_noaa_ingest import ingest_weather_and_safety
 from .data_ingest import ingest_tags
 from .data_ingest import ingest_dummy_popularity
@@ -23,10 +23,7 @@ def main():
     print("Ingesting dummy popularity data...")
     ingest_dummy_popularity()
 
-
     print("All ingestion complete.")
-    ingest_tags()
-
 
 if __name__ == "__main__":
     main()

@@ -229,6 +229,8 @@ def get_me():
 
 # --------- user features ---------
 
+# ----- Favorite Parks Routes -----
+
 # This will add a park to a users favorites
 @app.post("/api/parks/<park_id>/favorite")
 @login_required
@@ -294,6 +296,8 @@ def list_favorites():
     ]
     return jsonify({"favorites": favorites})
 
+# ----- Reviews Routes -----
+
 # This will create a review for a specific park
 @app.post("/api/parks/<park_id>/reviews")
 @login_required
@@ -304,7 +308,7 @@ def create_park_review(park_id):
     rating = data.get("rating")
     review_text = data.get("review_text", "").strip()
 
-    # Validate rating
+    # Validate rating so the only valid values are allowed
     try:
         rating_int = int(rating)
     except (TypeError, ValueError):
@@ -460,7 +464,7 @@ def create_triplog():
         }
     ), 201
 
-
+# This will update a specific trip log entry so that the user can modify their trip log
 @app.put("/api/triplog/<int:trip_id>")
 @login_required
 def update_triplog(trip_id):
@@ -591,7 +595,7 @@ def list_wishlist_trips():
 
     return jsonify({"wishlist": wishlist})
 
-
+# This will update a specific wishlist trip entry so that the user can modify their trip log
 @app.put("/api/wishlist/<int:wishlist_id>")
 @login_required
 def update_wishlist_trip(wishlist_id):
@@ -635,7 +639,8 @@ def update_wishlist_trip(wishlist_id):
             },
         }
     )
-# Campgrounds Page
+# ----- Campgrounds Page --------
+# This will list all of the campgrounds in the database
 @app.get("/api/campgrounds")
 @login_required
 def list_all_campgrounds():
@@ -671,6 +676,7 @@ def list_all_campgrounds():
 
     return jsonify({"campgrounds": campgrounds})
 
+# This gets all of the campgrounds for a specific park
 @app.get("/api/parks/<int:park_id>/campgrounds")
 @login_required
 def list_campgrounds(park_id):
@@ -707,6 +713,7 @@ def list_campgrounds(park_id):
 
     return jsonify({"campgrounds": campgrounds})
 
+# This will list all of the campground reservations for a specific user
 @app.get("/api/campgrounds/reservations")
 @login_required
 def list_campground_reservations():
@@ -734,6 +741,7 @@ def list_campground_reservations():
     )
     rows = cur.fetchall()
 
+    # This will place all of the retrieved info into reservations to be displayed
     reservations = []
     for reservation_id, start_date, end_date, status, campground_name, park_name in rows:
         reservations.append(
@@ -755,6 +763,7 @@ def list_campground_reservations():
 
     return jsonify({"reservations": reservations})
 
+# This will create a new campground reservation for a user
 @app.post("/api/campgrounds/reservations")
 @login_required
 def create_campground_reservation():
@@ -783,7 +792,7 @@ def create_campground_reservation():
     db = get_db()
     cur = db.cursor()
 
-    # Insert reservation
+    # Insert reservation in the database
     cur.execute(
         """
         INSERT INTO RESERVATION (user_id, campground_id, start_date, end_date, status)
@@ -793,6 +802,7 @@ def create_campground_reservation():
     )
     db.commit()
 
+    # Grab the reservation ID of the newly created reservation so we can log it
     reservation_id = cur.lastrowid
 
     # Activity log
@@ -804,7 +814,8 @@ def create_campground_reservation():
 
     return ( jsonify({"message": "Reservation created"}), 201, )
 
-# Trails Page
+# ----- Trails Page --------
+# This will list all of the trails for a specific park
 @app.get("/api/parks/<park_id>/trails")
 @login_required
 def list_trails(park_id):
@@ -821,6 +832,7 @@ def list_trails(park_id):
     )
     rows = cur.fetchall()
 
+    # All of the information that is attached to our query will be place in trails to be displayed
     trails = []
     for trail_id, name, length_miles, difficulty in rows:
         trails.append(
@@ -841,6 +853,7 @@ def list_trails(park_id):
     # wrapped so frontend uses response.json()["trails"]
     return jsonify({"trails": trails})
 
+# This will create a new review for a specific trail
 @app.post("/api/trails/<int:trail_id>/reviews")
 @login_required
 def add_trail_review(trail_id):
@@ -872,7 +885,7 @@ def add_trail_review(trail_id):
 
     return ( jsonify({"message": "Trail review created"}), 201, )
 
-
+# This will return all of the reviews attached to a specific user to be displayed on the frontend
 @app.get("/api/trails/reviews")
 @login_required
 def list_trail_reviews():
@@ -896,6 +909,7 @@ def list_trail_reviews():
     )
     rows = cur.fetchall()
 
+    # This will place all of the retrieved info into reviews to be displayed
     reviews = []
     for review_id, rating, review_text, trail_id, created_at in rows:
         reviews.append(
@@ -917,7 +931,8 @@ def list_trail_reviews():
 
     return jsonify({"reviews": reviews})
 
-# Tags endpoint
+# ----- Tags endpoint --------
+# This will list all of the parks, with optional filtering by tag
 @app.get("/api/parks")
 @login_required
 def list_parks():
@@ -957,6 +972,7 @@ def list_parks():
     )
     rows = cur.fetchall()
 
+    # All of the information that is attached to our query will be place in parks to be displayed
     parks = [{"park_id": r[0], "name": r[1]} for r in rows]
 
     # Activity log
@@ -969,7 +985,8 @@ def list_parks():
 
     return jsonify({"parks": parks})
 
-#Popularity endpoint
+# ----- Popularity endpoint --------
+# This will list all of the parks ordered by popularity, which is currently filled with dummy data as we do not have enough users to generate real popularity data
 @app.get("/api/parks/popular")
 @login_required
 def list_popular_parks():
@@ -989,11 +1006,11 @@ def list_popular_parks():
         JOIN PARK_POPULARITY pp ON p.park_id = pp.park_id
         ORDER BY pp.favorites_count DESC, p.name ASC
     """
-    params: list = []
 
-    cur.execute(sql, params)
+    cur.execute(sql)
     rows = cur.fetchall()
 
+    # All of the information that is attached to our query will be place in parks to be displayed
     parks = [
         {
             "park_id": row[0],
@@ -1014,15 +1031,10 @@ def list_popular_parks():
         "VIEW_POPULAR_PARKS",
     )
 
-    return jsonify({"parks": parks})
-
-if __name__ == "__main__":
-    # For local dev
-    app.run(debug=True, port=8000)
-
-    
+    return jsonify({"parks": parks})    
 
 # --------- Trail reviews ---------
+# This will create a new review for a specific trail
 @app.post("/api/trails/<trail_id>/reviews")
 @login_required
 def create_trail_review(trail_id):
@@ -1031,6 +1043,7 @@ def create_trail_review(trail_id):
     rating = data.get("rating")
     review_text = data.get("review_text")
 
+    # Validate review data
     if rating is None or not (1 <= int(rating) <= 5):
         return jsonify({"error": "Rating must be between 1 and 5"}), 400
 
@@ -1048,7 +1061,7 @@ def create_trail_review(trail_id):
     log_activity(user["session_id"], user["user_id"], f"CREATE_TRAIL_REVIEW trail_id={trail_id}")
     return jsonify({"message": "Trail review created"}), 201
 
-
+# This will return all of the reviews for a specific trail
 @app.get("/api/trails/<trail_id>/reviews")
 def list_trail_reviews(trail_id):
     db = get_db()
@@ -1076,3 +1089,7 @@ def list_trail_reviews(trail_id):
         for review_id, rating, review_text, created_at, username in rows
     ]
     return jsonify({"reviews": reviews})
+
+if __name__ == "__main__":
+    # For local dev
+    app.run(debug=True, port=8000)
