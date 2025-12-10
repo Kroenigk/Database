@@ -193,8 +193,8 @@ CREATE TABLE FACILITY (
 CREATE TABLE FEE (
     fee_id      INT AUTO_INCREMENT PRIMARY KEY,
     facility_id CHAR(36) NOT NULL,
-    description VARCHAR(255),
-    amount      DECIMAL(10,2),
+    description TEXT,
+    fee_type    TEXT,
     CONSTRAINT fk_fee_facility
         FOREIGN KEY (facility_id) REFERENCES FACILITY(facility_id)
         ON DELETE CASCADE

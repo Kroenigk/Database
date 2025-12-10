@@ -185,81 +185,131 @@ def ingest_facilities(max_records=1000):
 # ACTIVITY + FACILITY_ACTIVITY ingest
 # --------------------------------------------------------------------
 
-def ingest_facility_activities(max_activities: int = 1000, batch_size: int = 300):
+def ingest_facility_activities(max_activities: int = 1000, batch_size: int = 300) -> None:
     """
-    Fetch activities for facilities from the RIDB API and populate the FACILITY_ACTIVITY table.
-    Skips facilities that fail or have no activities.
+    Populate ACTIVITY and FACILITY_ACTIVITY from RIDB.
+
+    ACTIVITY (
+        activity_id VARCHAR(50) PRIMARY KEY,
+        name        VARCHAR(100) NOT NULL,
+        description TEXT
+    )
+
+    FACILITY_ACTIVITY (
+        facility_id CHAR(36) NOT NULL,
+        activity_id VARCHAR(50) NOT NULL,
+        PRIMARY KEY (facility_id, activity_id)
+    )
+
+    - Paginates through facilities from RIDB.
+    - For each facility, fetches /facilities/{id}/activities with retry.
+    - Upserts ACTIVITY rows.
+    - Inserts FACILITY_ACTIVITY rows (ignoring duplicates).
     """
+
     conn = get_connection()
-    cursor = conn.cursor()
-    
+    cur = conn.cursor()
+
+    activity_upsert_sql = """
+        INSERT INTO ACTIVITY (activity_id, name, description)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            name        = VALUES(name),
+            description = COALESCE(ACTIVITY.description, VALUES(description))
+    """
+
+    facility_activity_upsert_sql = """
+        INSERT IGNORE INTO FACILITY_ACTIVITY (facility_id, activity_id)
+        VALUES (%s, %s)
+    """
+
     offset = 0
     processed = 0
 
-    while processed < max_activities:
-        limit = min(batch_size, max_activities - processed)
-        url = f"{RIDB_BASE_URL}/facilities?limit={limit}&offset={offset}&apikey={RIDB_API_KEY}"
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-        except requests.RequestException as e:
-            logging.warning(f"Failed to fetch facilities batch at offset {offset}: {e}")
-            break  # skip the batch if API fails
+    try:
+        while processed < max_activities:
+            limit = min(batch_size, max_activities - processed)
+            # Fetch a batch of facilities from RIDB
+            url = f"{RIDB_BASE_URL}/facilities"
+            params = {
+                "limit": limit,
+                "offset": offset,
+                "apikey": RIDB_API_KEY,
+            }
 
-        facilities = response.json().get("RECDATA", [])
-        if not facilities:
-            break  # no more data
+            try:
+                response = requests.get(url, params=params, timeout=10)
+                response.raise_for_status()
+            except requests.RequestException as e:
+                logging.warning(f"Failed to fetch facilities batch at offset {offset}: {e}")
+                break  # stop processing if the facilities call fails
 
-        for facility in facilities:
-            facility_id = facility.get("FacilityID")
-            if not facility_id:
-                continue
+            facilities = response.json().get("RECDATA", [])
+            if not facilities:
+                break  # no more data
 
-            activity_url = f"{RIDB_BASE_URL}/facilities/{facility_id}/activities?apikey={RIDB_API_KEY}"
-
-            # Retry logic for each facility
-            for attempt in range(3):
-                try:
-                    activity_resp = requests.get(activity_url, timeout=5)
-                    if activity_resp.status_code == 404:
-                        logging.warning(f"Facility {facility_id} not found. Skipping.")
-                        activities = []
-                        break
-                    activity_resp.raise_for_status()
-                    activities = activity_resp.json().get("RECDATA", [])
-                    break  # success
-                except requests.RequestException:
-                    if attempt < 2:
-                        time.sleep(1)  # wait 1 second and retry
-                    else:
-                        logging.warning(f"Failed to fetch facility {facility_id} after 3 attempts. Skipping.")
-                        activities = []
-
-            # Insert activities into DB
-            for act in activities:
-                activity_id = act.get("ActivityID")
-                if not activity_id:
-                    continue
-                try:
-                    cursor.execute(
-                        """
-                        INSERT INTO FACILITY_ACTIVITY (facility_id, activity_id)
-                        VALUES (%s, %s)
-                        """,
-                        (facility_id, activity_id)
-                    )
-                except Exception as e:
-                    logging.warning(f"Failed to insert activity {activity_id} for facility {facility_id}: {e}")
+            for facility in facilities:
+                facility_id = facility.get("FacilityID")
+                if not facility_id:
                     continue
 
-            processed += 1
+                activity_url = f"{RIDB_BASE_URL}/facilities/{facility_id}/activities"
+                activity_params = {"apikey": RIDB_API_KEY}
 
-        conn.commit()
-        offset += limit
+                # Retry logic for each facility's activities
+                activities = []
+                for attempt in range(3):
+                    try:
+                        activity_resp = requests.get(activity_url, params=activity_params, timeout=5)
+                        if activity_resp.status_code == 404:
+                            logging.warning(f"Facility {facility_id} not found. Skipping.")
+                            activities = []
+                            break
+                        activity_resp.raise_for_status()
+                        activities = activity_resp.json().get("RECDATA", [])
+                        break  # success
+                    except requests.RequestException as e:
+                        if attempt < 2:
+                            time.sleep(1)  # brief backoff then retry
+                        else:
+                            logging.warning(
+                                f"Failed to fetch activities for facility {facility_id} "
+                                f"after 3 attempts. Skipping. Error: {e}"
+                            )
+                            activities = []
 
-    cursor.close()
-    conn.close()
-    print(f"Ingested activities for {processed} facilities")
+                # Insert ACTIVITY + FACILITY_ACTIVITY
+                for act in activities:
+                    ridb_act_id = act.get("ActivityID")
+                    name = act.get("ActivityName")
+                    desc = act.get("ActivityDescription")
+
+                    if not ridb_act_id or not name:
+                        continue
+
+                    activity_id = str(ridb_act_id)
+
+                    try:
+                        # Upsert into ACTIVITY
+                        cur.execute(activity_upsert_sql, (activity_id, name, desc))
+                        # Link facility to activity
+                        cur.execute(facility_activity_upsert_sql, (facility_id, activity_id))
+                    except Exception as e:
+                        logging.warning(
+                            f"Failed to insert activity {activity_id} for facility {facility_id}: {e}"
+                        )
+                        continue
+
+                processed += 1
+
+            conn.commit()
+            offset += limit
+
+        print(f"RIDB: activities + facility activities ingested for {processed} facilities.")
+
+    finally:
+        cur.close()
+        conn.close()
 
 # --------------------------------------------------------------------
 # FEE

@@ -5,7 +5,6 @@ from park_data import (
     get_parks,
     get_park_detail,
     get_basic_counts,
-    render_park_detail,
 )
 from backend.db import get_connection
 import requests
@@ -47,6 +46,67 @@ def render_sidebar():
     st.sidebar.metric("Alerts", counts.get("alerts", 0))
 
     return search, state_code
+
+# This function will display all the information of a given park on the main Park Explorer page
+def render_park_detail(park_id: str):
+    # These buttons allow the user to add a park to their favorites
+    col1Button = st.columns([3])[0]
+    with col1Button:
+        if st.button("Add to Favorites"):
+            add_to_favorites(park_id)
+
+    # This gets all of the necessary info related to the park so it can be displayed later
+    detail = get_park_detail(park_id)
+    if not detail:
+        st.error("Park not found.")
+        return
+
+    st.header(detail["name"])
+    if detail["designation"]:
+        st.caption(detail["designation"])
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        if detail["description"]:
+            st.write(detail["description"])
+    with col2:
+        st.subheader("Location")
+        st.write(f"Latitude: {detail['lat']}")
+        st.write(f"Longitude: {detail['lon']}")
+
+    # Images
+    if detail["images"]:
+        st.subheader("Images")
+        urls = [row[0] for row in detail["images"] if row[0]]
+        if urls:
+            st.image(urls, use_column_width=True)
+
+    # Activities & amenities
+    cols = st.columns(2)
+    with cols[0]:
+        st.subheader("Activities")
+        if detail["activities"]:
+            st.write(", ".join(detail["activities"]))
+        else:
+            st.write("No activities listed.")
+
+    with cols[1]:
+        st.subheader("Amenities")
+        if detail["amenities"]:
+            st.write(", ".join(detail["amenities"]))
+        else:
+            st.write("No amenities listed.")
+
+    # Alerts - this has a expanded if the user desires more information
+    st.subheader("Current Alerts")
+    if detail["alerts"]:
+        for category, title, desc, issued_at in detail["alerts"]:
+            with st.expander(f"{category or 'Alert'}: {title}"):
+                if issued_at:
+                    st.caption(f"Issued at: {issued_at}")
+                st.write(desc or "No description provided.")
+    else:
+        st.write("No current alerts for this park.")
 
 
 def render_park_list(search, state_code):

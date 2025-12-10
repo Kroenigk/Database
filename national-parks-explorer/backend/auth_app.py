@@ -677,7 +677,7 @@ def list_all_campgrounds():
     return jsonify({"campgrounds": campgrounds})
 
 # This gets all of the campgrounds for a specific park
-@app.get("/api/parks/<int:park_id>/campgrounds")
+@app.get("/api/parks/<park_id>/campgrounds")
 @login_required
 def list_campgrounds(park_id):
     user = g.user
@@ -728,22 +728,27 @@ def list_campground_reservations():
                r.start_date,
                r.end_date,
                r.status,
-               r.created_at,
                c.name AS campground_name,
                p.name AS park_name
         FROM RESERVATION r
         JOIN CAMPGROUND c ON c.campground_id = r.campground_id
         JOIN PARK p ON p.park_id = c.park_id
         WHERE r.user_id = %s
-        ORDER BY r.start_date DESC, r.created_at DESC
+        ORDER BY r.start_date DESC
         """,
         (user_id,),
     )
     rows = cur.fetchall()
 
-    # This will place all of the retrieved info into reservations to be displayed
     reservations = []
-    for reservation_id, start_date, end_date, status, campground_name, park_name in rows:
+    for (
+        reservation_id,
+        start_date,
+        end_date,
+        status,
+        campground_name,
+        park_name,
+    ) in rows:
         reservations.append(
             {
                 "reservation_id": reservation_id,
@@ -754,6 +759,7 @@ def list_campground_reservations():
                 "status": status,
             }
         )
+
     # Log to activity log
     log_activity(
         user["session_id"],
@@ -1061,34 +1067,34 @@ def create_trail_review(trail_id):
     log_activity(user["session_id"], user["user_id"], f"CREATE_TRAIL_REVIEW trail_id={trail_id}")
     return jsonify({"message": "Trail review created"}), 201
 
-# This will return all of the reviews for a specific trail
-@app.get("/api/trails/<trail_id>/reviews")
-def list_trail_reviews(trail_id):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(
-        """
-        SELECT r.review_id, r.rating, r.review_text, r.created_at, u.username
-        FROM TRAIL_REVIEW r
-        JOIN APP_USER u ON u.user_id = r.user_id
-        WHERE r.trail_id = %s
-        ORDER BY r.created_at DESC
-        """,
-        (trail_id,),
-    )
-    rows = cur.fetchall()
+# # This will return all of the reviews for a specific trail
+# @app.get("/api/trails/<trail_id>/reviews")
+# def list_trail_reviews(trail_id):
+#     db = get_db()
+#     cur = db.cursor()
+#     cur.execute(
+#         """
+#         SELECT r.review_id, r.rating, r.review_text, r.created_at, u.username
+#         FROM TRAIL_REVIEW r
+#         JOIN APP_USER u ON u.user_id = r.user_id
+#         WHERE r.trail_id = %s
+#         ORDER BY r.created_at DESC
+#         """,
+#         (trail_id,),
+#     )
+#     rows = cur.fetchall()
 
-    reviews = [
-        {
-            "review_id": review_id,
-            "rating": rating,
-            "review_text": review_text,
-            "created_at": created_at.isoformat() if created_at else None,
-            "username": username,
-        }
-        for review_id, rating, review_text, created_at, username in rows
-    ]
-    return jsonify({"reviews": reviews})
+#     reviews = [
+#         {
+#             "review_id": review_id,
+#             "rating": rating,
+#             "review_text": review_text,
+#             "created_at": created_at.isoformat() if created_at else None,
+#             "username": username,
+#         }
+#         for review_id, rating, review_text, created_at, username in rows
+#     ]
+#     return jsonify({"reviews": reviews})
 
 if __name__ == "__main__":
     # For local dev

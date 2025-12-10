@@ -1,5 +1,5 @@
 from .nps_ingest import ingest_nps_all
-from .ridb_ingest import ingest_ridb_all
+from .ri_ingest import ingest_ridb_all
 from .usgs_noaa_ingest import ingest_weather_and_safety
 
 __all__ = [
