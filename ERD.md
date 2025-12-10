@@ -91,8 +91,8 @@ erDiagram
   FEE {
     INT fee_id PK
     CHAR(36) facility_id FK
-    VARCHAR(255) description
-    DECIMAL amount
+    TEXT description
+    TEXT fee_type
   }
 
   FACILITY_ACTIVITY {

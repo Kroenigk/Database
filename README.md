@@ -1,8 +1,121 @@
 # National Parks Explorer
 
-Minimal Python + MySQL app to ingest National Park Service (NPS) data and explore it via Streamlit with basic login.
+# National Parks Explorer
 
-## Quick Start
+## Table of Contents
+1. Overview  
+2. What's Included  
+3. Data Sources  
+4. API Overview  
+5. Features  
+6. Database  
+7. Diagrams  
+8. Screenshots  
+9. Quick Start
+10. Data Sources
+
+---
+
+## 1. Overview
+A full-stack National Parks Explorer application with a Streamlit frontend, Flask backend, and a MySQL database (30 tables).  
+Users can explore all 63 U.S. National Parks, view trails and campgrounds, write reviews, plan trips, and create campground reservations.
+
+---
+
+## 2. What's Included
+- Data ingestion for multiple public datasets  
+- Flask backend serving REST API endpoints  
+- Streamlit frontend connected to backend  
+- SQL schema and table definitions  
+- ER diagram (in separate file)  
+- Authentication with session-based access control  
+- Activity logging for key actions  
+- User-facing Streamlit pages:
+  - Park search  
+  - Park details  
+  - Trails  
+  - Campgrounds  
+  - Park reviews  
+  - Trail reviews  
+  - Trip logs  
+  - Wishlist trips  
+  - Favorite parks  
+  - Park popularity  
+  - Park tags  
+  - Login / Signup  
+- Multi-tab layouts within pages for organization
+
+---
+
+## 3. Data Sources
+- **RIDB (Recreation.gov)** — facilities, campgrounds, amenities  
+- **NPS API** — parks, descriptions, locations  
+- **USGS** — geographic data  
+- **NOAA** — climate and environmental data  
+- **Custom tag dataset**  
+- **Dummy popularity metrics**
+
+---
+
+## 4. API Overview
+Backend exposes `GET`, `POST`, `PUT`, and `DELETE` endpoints for:
+- Parks  
+- Trails  
+- Campgrounds  
+- Reviews (park + trail)  
+- Reservations  
+- Tags  
+- Wishlist trips  
+- Trip logs  
+- Favorite parks  
+
+---
+
+## 5. Features
+
+### Read
+- Park details  
+- Trail details  
+- Campground details  
+- User reviews  
+- User reservations  
+- User trip logs  
+- User wishlist trips  
+- Park popularity data  
+- Park tags  
+
+### Write
+- Create trip log  
+- Create trail review  
+- Create park review  
+- Add wishlist trip  
+- Add favorite park  
+
+### Update
+- Update trip log  
+- Update wishlist trip  
+
+### Delete
+- Remove favorite park  
+
+---
+
+## 6. Database
+- 30 total tables  
+- Includes core data tables, user-generated content, join tables, and logging tables
+
+---
+
+## 7. Diagrams
+- Mermaid ER diagram located in the `ERD.md` file
+
+---
+
+## 8. Screenshots
+- UI screenshots are available in the `/screenshots` directory
+
+
+## 9. Quick Start
 
 1) Enter project
 ```bash
@@ -68,12 +181,7 @@ Open in browser:
 $BROWSER http://localhost:8501
 ```
 
-## What’s Included
-- Data ingestion for parks and activities
-- Streamlit pages: search, park details, activities filter, login
-- Basic auth with sessions
-
-## Data Sources
+## 10. Data Sources
 This project uses publicly available U.S. federal datasets and APIs:
 
 - Recreation Information Database (RIDB), U.S. General Services Administration, 
