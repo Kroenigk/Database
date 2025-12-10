@@ -44,6 +44,11 @@ Users can explore all 63 U.S. National Parks, view trails and campgrounds, write
   - Park tags  
   - Login / Signup  
 - Multi-tab layouts within pages for organization
+- Analytical Views
+    - **Popular Parks Dashboard** — Ranks parks using aggregated metrics (favorites, visits, reviews, average rating).  
+    - **Trail Explorer** — Filters trails by state, park, difficulty, or length to analyze subsets of trail data.  
+    - **Campground Explorer** — Filters campgrounds by state or park to compare availability and features.  
+    - **Tag-Based Park Explorer** — Groups parks by tags to analyze parks by themes (e.g., wildlife, hiking, geology).
 
 ---
 
@@ -101,7 +106,7 @@ Backend exposes `GET`, `POST`, `PUT`, and `DELETE` endpoints for:
 ---
 
 ## 6. Database
-- 30 total tables  
+- 30 relational tables (users, parks, trails, campgrounds, reviews, reservations, tags, popularity, logs, etc.), normalized with PK/FK/constraints and an activity log table. 
 - Includes core data tables, user-generated content, join tables, and logging tables
 
 ---
