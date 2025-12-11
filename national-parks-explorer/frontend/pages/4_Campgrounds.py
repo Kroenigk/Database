@@ -229,6 +229,25 @@ with reservations_tab:
     st.markdown("---")
     st.info("Current Reservations")
 
+    def delete_reservation(reservation_id: int) -> bool:
+        """Delete a reservation by reservation_id."""
+        user = st.session_state.get("user")
+        if not user:
+            st.error("You must be logged in.")
+            return False
+
+        session_id = str(user["session_id"])
+        try:
+            resp = requests.delete(
+                f"{API_BASE}/api/campgrounds/reservations/{reservation_id}",
+                cookies={"session_id": session_id},
+                timeout=5,
+            )
+            return resp.status_code == 200
+        except Exception as e:
+            st.error(f"Error contacting backend: {e}")
+            return False
+
     def render_reservations() -> None:
         """Render current user's reservations."""
         user = st.session_state.get("user")
@@ -256,13 +275,23 @@ with reservations_tab:
             st.info("You have no reservations.")
             return
 
-        for res in reservations:
-            st.write(f"**Campground Name:** {res['campground_name']}")
-            st.write(f"**Park Name:** {res['park_name']}")
-            st.write(f"**Start Date:** {res['start_date']}")
-            st.write(f"**End Date:** {res['end_date']}")
-            st.write(f"**Status:** {res['status']}")
-            st.markdown("---")
+        for idx, res in enumerate(reservations):
+            with st.container(border=True):
+                col1, col2 = st.columns([4, 1])
+                
+                with col1:
+                    st.write(f"**Campground:** {res['campground_name']}")
+                    st.write(f"**Park:** {res['park_name']}")
+                    st.write(f"**Dates:** {res['start_date']} to {res['end_date']}")
+                    st.write(f"**Status:** {res['status']}")
+                
+                with col2:
+                    if st.button("🗑️ Cancel", key=f"delete_res_{idx}"):
+                        if delete_reservation(res['reservation_id']):
+                            st.success("Reservation cancelled!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to cancel reservation")
 
     def make_reservation() -> None:
         """Allow user to make a new campground reservation."""
@@ -333,6 +362,7 @@ with reservations_tab:
             else:
                 st.success("Reservation made successfully!")
                 st.toast("Reservation submitted ✅")
+                st.rerun()
 
     # Main UI for reservations tab
     render_reservations()

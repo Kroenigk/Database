@@ -820,6 +820,35 @@ def create_campground_reservation():
 
     return ( jsonify({"message": "Reservation created"}), 201, )
 
+# Delete a campground reservation
+@app.delete("/api/campgrounds/reservations/<int:reservation_id>")
+@login_required
+def delete_campground_reservation(reservation_id):
+    user = g.user
+    db = get_db()
+    cur = db.cursor()
+    
+    # Verify the reservation belongs to the user
+    cur.execute(
+        "SELECT user_id FROM RESERVATION WHERE reservation_id = %s",
+        (reservation_id,)
+    )
+    result = cur.fetchone()
+    
+    if not result or result[0] != user["user_id"]:
+        return jsonify({"error": "Reservation not found or unauthorized"}), 404
+    
+    cur.execute("DELETE FROM RESERVATION WHERE reservation_id = %s", (reservation_id,))
+    db.commit()
+    
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"DELETE_RESERVATION reservation_id={reservation_id}",
+    )
+    
+    return jsonify({"message": "Reservation cancelled"}), 200
+
 # ----- Trails Page --------
 # This will list all of the trails for a specific park
 @app.get("/api/parks/<park_id>/trails")
@@ -1067,34 +1096,80 @@ def create_trail_review(trail_id):
     log_activity(user["session_id"], user["user_id"], f"CREATE_TRAIL_REVIEW trail_id={trail_id}")
     return jsonify({"message": "Trail review created"}), 201
 
-# # This will return all of the reviews for a specific trail
-# @app.get("/api/trails/<trail_id>/reviews")
-# def list_trail_reviews(trail_id):
-#     db = get_db()
-#     cur = db.cursor()
-#     cur.execute(
-#         """
-#         SELECT r.review_id, r.rating, r.review_text, r.created_at, u.username
-#         FROM TRAIL_REVIEW r
-#         JOIN APP_USER u ON u.user_id = r.user_id
-#         WHERE r.trail_id = %s
-#         ORDER BY r.created_at DESC
-#         """,
-#         (trail_id,),
-#     )
-#     rows = cur.fetchall()
+# This will return all of the park reviews attached to a specific user
+@app.get("/api/parks/reviews")
+@login_required
+def list_park_reviews():
+    user = g.user
+    user_id = user["user_id"]
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        SELECT r.review_id,
+               r.rating,
+               r.review_text,
+               r.park_id,
+               r.created_at,
+               p.name as park_name
+        FROM PARK_REVIEW r
+        LEFT JOIN PARK p ON r.park_id = p.park_id
+        WHERE r.user_id = %s
+        ORDER BY r.created_at DESC
+        """,
+        (user_id,),
+    )
+    rows = cur.fetchall()
+    
+    reviews = []
+    for review_id, rating, review_text, park_id, created_at, park_name in rows:
+        reviews.append(
+            {
+                "review_id": review_id,
+                "park_id": park_id,
+                "park_name": park_name,
+                "user_id": user_id,
+                "rating": rating,
+                "review_text": review_text,
+                "created_at": created_at.isoformat() if created_at else None,
+            }
+        )
+    
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"LIST_PARK_REVIEWS user_id={user_id}",
+    )
+    
+    return jsonify({"reviews": reviews})
 
-#     reviews = [
-#         {
-#             "review_id": review_id,
-#             "rating": rating,
-#             "review_text": review_text,
-#             "created_at": created_at.isoformat() if created_at else None,
-#             "username": username,
-#         }
-#         for review_id, rating, review_text, created_at, username in rows
-#     ]
-#     return jsonify({"reviews": reviews})
+@app.delete("/api/parks/reviews/<int:review_id>")
+@login_required
+def delete_park_review(review_id):
+    user = g.user
+    db = get_db()
+    cur = db.cursor()
+    
+    # Verify the review belongs to the user
+    cur.execute(
+        "SELECT user_id FROM PARK_REVIEW WHERE review_id = %s",
+        (review_id,)
+    )
+    result = cur.fetchone()
+    
+    if not result or result[0] != user["user_id"]:
+        return jsonify({"error": "Review not found or unauthorized"}), 404
+    
+    cur.execute("DELETE FROM PARK_REVIEW WHERE review_id = %s", (review_id,))
+    db.commit()
+    
+    log_activity(
+        user["session_id"],
+        user["user_id"],
+        f"DELETE_PARK_REVIEW review_id={review_id}",
+    )
+    
+    return jsonify({"message": "Park review deleted"}), 200
 
 if __name__ == "__main__":
     # For local dev

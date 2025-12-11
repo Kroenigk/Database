@@ -102,6 +102,9 @@ Backend exposes `GET`, `POST`, `PUT`, and `DELETE` endpoints for:
 
 ### Delete
 - Remove favorite park  
+- Remove reservations
+- Remove Park review
+- Remove Trail review
 
 ---
 
@@ -146,6 +149,10 @@ docker start parks-mysql
 4) Apply schema (see [sql/schema.sql](national-parks-explorer/sql/schema.sql))
 ```bash
 mysql -h 127.0.0.1 -u root -p national_parks_db < sql/schema.sql
+```
+- To adjust/view schema:
+```bash
+     docker exec -it parks-mysql mysql -u root -p
 ```
 
 5) Configure environment (edit [national-parks-explorer/.env](national-parks-explorer/.env))

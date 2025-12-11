@@ -193,12 +193,15 @@ CREATE TABLE FACILITY (
 CREATE TABLE FEE (
     fee_id      INT AUTO_INCREMENT PRIMARY KEY,
     facility_id CHAR(36) NOT NULL,
-    description TEXT,
-    fee_type    TEXT,
+    description VARCHAR(255),
+    amount      DECIMAL(10,2),
     CONSTRAINT fk_fee_facility
         FOREIGN KEY (facility_id) REFERENCES FACILITY(facility_id)
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE FEE DROP COLUMN amount;
+ALTER TABLE FEE MODIFY description TEXT;
+ALTER TABLE FEE ADD COLUMN fee_type VARCHAR(100) AFTER facility_id;
 
 CREATE TABLE FACILITY_ACTIVITY (
     facility_id CHAR(36) NOT NULL,
